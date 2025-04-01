@@ -1,0 +1,97 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+
+```{r}
+plot(cars)
+```
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
+
+
+
+
+# reading both table
+```{r}
+library(readxl)
+
+tad_df <- read_excel("C:/Users/ghaza/Documents/ghazal/Bioinformatik_Fächer/Masterarbeit_Project/Results/TAD results/TAD_data_with_header.xlsx", skip =2)
+dmrs_df <- read_excel("C:/Users/ghaza/Documents/ghazal/Bioinformatik_Fächer/Masterarbeit_Project/Scripts/R_Scripts/Output/DMRs_0.01_smooth.xlsx")
+
+View(tad_df)
+View(dmrs_df)
+```
+
+# create a table
+```{r}
+dmrsInTads <- dmrs_df[, c("DMR_Nr", "chr", "start", "end", "length", "value", "L", "p.value")]
+
+
+
+dmrsInTads$TadNr <- NA
+dmrsInTads$overlap <- NA
+# Loop through each row in dmrsInTads
+for (i in 1:nrow(dmrsInTads)) {
+  # Check if the chr is "chr13"
+  if (dmrsInTads$chr[i] == "chr13") {
+    dmrstart <- dmrsInTads$start[i]  
+    dmrend <- dmrsInTads$end[i]
+
+    # Check if dmrstart and dmrend fall within any TAD row in tad_df
+    for (j in 1:nrow(tad_df)) {
+      # Case 1: dmrstart and dmrend completely within the TAD
+      if (dmrstart >= tad_df$StartPos[j] && dmrend <= tad_df$EndPos[j]) {
+        dmrsInTads$TadNr[i] <- tad_df$TadNr[j]
+        dmrsInTads$overlap[i] <- "within the tad"
+        dmrsInTads$tadStart[i] <- tad_df$StartPos[j]
+        dmrsInTads$tadEnd[i] <- tad_df$EndPos[j]
+        dmrsInTads$TadLength[i] <- tad_df$TadLength[j]
+        
+        break  # No need to check further rows in tad_df, once it's found
+      } 
+      # Case 2: dmrstart is greater than StartPos, but dmrend is greater than EndPos
+      else if (dmrstart < tad_df$EndPos[j] && dmrend > tad_df$StartPos[j]) {
+        dmrsInTads$TadNr[i] <- tad_df$TadNr[j]
+        dmrsInTads$overlap[i] <- "end of TAD"
+        dmrsInTads$tadStart[i] <- tad_df$StartPos[j]
+        dmrsInTads$tadEnd[i] <- tad_df$EndPos[j]
+        dmrsInTads$TadLength[i] <- tad_df$TadLength[j]
+        
+        break  # No need to check further rows in tad_df, once it's found
+      } 
+      # Case 3: dmrstart is smaller than StartPos and dmrend is greater than StartPos
+      else if (dmrstart < tad_df$StartPos[j] && dmrend > tad_df$StartPos[j]) {
+        dmrsInTads$TadNr[i] <- tad_df$TadNr[j]
+        dmrsInTads$overlap[i] <- "beginning of TAD"
+        dmrsInTads$tadStart[i] <- tad_df$StartPos[j]
+        dmrsInTads$tadEnd[i] <- tad_df$EndPos[j]
+        dmrsInTads$TadLength[i] <- tad_df$TadLength[j]
+        
+        break  # No need to check further rows in tad_df, once it's found
+      }
+    }
+  }
+}
+
+# View the result
+View(dmrsInTads)
+```
+
+# save / retreave
+```{r}
+dmrsInTads_with_rownames <- cbind(CpGs = rownames(dmrsInTads), dmrsInTads)
+writexl::write_xlsx(dmrsInTads_with_rownames, "./Output/9-DMRs_inTADs.xlsx")
+
+#retreave the table
+library(readxl)
+dmrsInTads <- read_excel("./Output/9-DMRs_inTADs.xlsx", col_names = TRUE)
+```

@@ -1,0 +1,92 @@
+---
+title: "Fragmented Data"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+
+```{r}
+plot(cars)
+```
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
+
+
+
+
+```{r}
+library("minfi")
+
+Dir_Frag_data <- "C:/Users/ghaza/Documents/ghazal/Bioinformatik_Fächer/Masterarbeit_Project/Data/fragmented_dna_dataset_epicv2_ghazal/2024-143-ILL_METUVG_N=20/METUVG"
+
+sample_sheet <- read.csv(file.path(Dir_Frag_data, "samplesheet_2024-143-ILL_METUVG_N=20.csv"), header = TRUE, sep = ";")
+
+sample_sheet$Basename <- file.path(Dir_Frag_data, sample_sheet$SentrixBarcode_A, paste0(sample_sheet$SentrixBarcode_A, "_", sample_sheet$SentrixPosition_A))
+View(sample_sheet)
+
+
+rchanelset <- read.metharray.exp(targets = sample_sheet) 
+rchanelset #1105209 20 
+
+library("IlluminaHumanMethylationEPICv2manifest")
+manifest_freag <- getManifest(rchanelset)
+manifest_freag
+Probe_Info_frag <- getProbeInfo(manifest_freag)
+dim(Probe_Info_frag)  #128271      8
+Probe_Info_frag
+
+####### QC #########
+# plot raw intensities
+plot(density(as.vector(assay(rchanelset, "Red"))), main = "Channel Intensities", lwd = 2) 
+lines(density(as.vector(assay(rchanelset, "Green"))), col = "green", lwd = 2)
+legend("topright", legend = c("Red Channel", "Green Channel"), col = c("black", "green"), lwd = 2)
+
+# badewanne plot: Beta plot
+densityPlot(rchanelset, sampGroups = sample_sheet$SentrixPosition_A  , main ="Beta values distribution of raw data", xlab = "Beta")
+
+## bean plot
+densityBeanPlot(rchanelset, sampGroups = sample_sheet$SentrixPosition_A)
+densityBeanPlot(rchanelset)
+
+# QC report
+qcReport(rchanelset, sampGroups = sample_sheet$SentrixPosition_A,  pdf = "fragmented_qcReport_ex.pdf" )
+controlStripPlot(rchanelset, controls="BISULFITE CONVERSION II")
+
+# MDS plot: samples PCA
+mdsPlot(rchanelset, sampNames = sample_sheet$Sample_Name, sampGroups = sample_sheet$SentrixPosition_A, legendNCol = 3)
+
+# sample QC
+frag.raw <- preprocessRaw(rchanelset) #936990 20 
+#log2 Medien plot: Methylated and unmethylated intensities
+frag_qc <- getQC(frag.raw)
+frag.raw <- addQC(frag.raw, frag_qc)
+plotQC(frag_qc) ######no points on plot -->
+# PlotQC mit einem kleineren Grenzwert
+plotQC(frag_qc, badSampleCutoff = 6)
+
+plotBetasByType(frag.raw[,1], main = "Raw", legendPos = "topright")
+
+frag.noob <- preprocessNoob(rchanelset) #936990 20
+set.seed(123)
+frag.SWAN <- preprocessSWAN(rchanelset)
+
+fra.Quantile <- preprocessQuantile(rchanelset, fixOutliers = TRUE,removeBadSamples = TRUE, badSampleCutoff = 10.5, quantileNormalize = TRUE, stratified = TRUE, mergeManifest = FALSE, sex = NULL)
+#### Fehler in preprocessQuantile(rchanelset, fixOutliers = TRUE, removeBadSamples = TRUE,  :   All samples found to be bad
+
+frag.funnorm <- preprocessFunnorm(rchanelset)
+
+densityPlot(frag.noob,sampGroups = sample_sheet$SentrixPosition_A,main = "Beta Values distribution after noob normalisation")
+
+densityPlot(frag.SWAN,sampGroups = sample_sheet$SentrixPosition_A,main = "Beta Values distribution after SWAN normalisation")
+
+densityPlot(getBeta(frag.funnorm),sampGroups = sample_sheet$SentrixPosition_A,main = "Beta Values distribution after funnorm normalisation")
+
+
+### no sin in doing the other steps (filtering, removing snps, mapping to genome, finding DMRs and DMPs)  
+```

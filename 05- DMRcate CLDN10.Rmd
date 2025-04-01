@@ -1,0 +1,285 @@
+---
+title: "DMRcate ausprobieren"
+output:
+  html_document:
+    df_print: paged
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+
+```{r}
+plot(cars)
+```
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
+
+
+
+##DMRCATE BIGINNS WITH THE BETA TABLE NOT THE RAW IDAT FILE ???!!!!
+# library
+```{r}
+library(minfi)
+library("IlluminaHumanMethylationEPICv2manifest")
+```
+
+# Reading the SampleSheet file
+```{r}
+RawDataDir <- "C:\\Users\\ghaza\\Documents\\ghazal\\Bioinformatik_Fächer\\Masterarbeit_Project\\Data\\RawData\\epic_data\\2024_071_ILL_METUVG_N_8\\METUVG"
+
+targets <- read.metharray.sheet(RawDataDir)
+```
+
+# Load methydata from idat files 
+```{r}
+RGset <- read.metharray.exp(targets = targets)
+
+manifest <- getManifest(RGset)
+#manifest
+
+raw_normalised <- preprocessRaw(RGset)
+```
+
+# Normalisation
+```{r}
+set.seed(123)
+SWAN_normalised <- preprocessSWAN(RGset, raw_normalised)
+```
+
+# Filtering 0,01
+```{r}
+#---------------first level filtering: cpgs that passed the threshold in all samples ----------
+detectp <- detectionP(RGset)
+#dim(detectp) #936990      8
+
+# 2. Absent vector
+all.equal(row.names(SWAN_normalised), row.names(detectp))  #TRUE
+absent_0.01 <- apply(detectp, 1, function(x) sum(x>0.01)) 
+table(absent_0.01) #-> 911931 -_>  97.32559%
+
+# 3. Filtering SWAN: Absent == 0 --> the probe is relaiably detected in all samples
+# all samples for that probe passed the detection threshold are kept others are deleted
+SWAN_filtered_0.01 <- SWAN_normalised[absent_0.01 == 0]  
+dim(SWAN_filtered_0.01) # 911931  
+```
+
+# Map to the Genome:
+```{r}
+Geno_SWAN_filtered_0.01 <- mapToGenome(SWAN_filtered_0.01, mergeManifest = TRUE)
+dim(Geno_SWAN_filtered_0.01) # 905075
+```
+# Convert GenoMethylSet to a GenoRatioSet (Beta + M): 
+```{r}
+ratio_geno_Swan_0.01 <- ratioConvert(Geno_SWAN_filtered_0.01,what = "both", keepCN= TRUE)
+dim(ratio_geno_Swan_0.01) #905075       8
+```
+# removing SNPs 
+```{r}
+snps_0.01 <- getSnpInfo(ratio_geno_Swan_0.01)
+ratio_geno_Swan_0.01 <- addSnpInfo(ratio_geno_Swan_0.01)
+ratio_geno_Swan_0.01_NoSNP <- dropLociWithSnps(ratio_geno_Swan_0.01, snps = c("SBE", "CpG"), maf = 0)
+ratio_geno_Swan_0.01_NoSNP # 891492
+```
+# Annotation step is done later bei DMRcate pipeline
+
+
+##################### DMRcate ##################
+
+# library download
+```{r}
+library(DMRcate)
+```
+
+# Plot density vs Beta
+```{r}
+# Editing the table raw_normalised_beta_values to use in this package
+ALLbetas <- getBeta(ratio_geno_Swan_0.01_NoSNP)
+View(ALLbetas)
+
+### 1. Check if the length of targets$Sample_Name matches the number of columns
+if (length(targets$Sample_Name) == ncol(ALLbetas)) {
+    colnames(ALLbetas) <- targets$Sample_Name
+} else {
+  stop("The number of column names does not match the number of target names.")
+}
+# Verify the changes
+colnames(ALLbetas)
+View(ALLbetas)
+
+
+## Density beta plot (badewanne)
+# 1 Define colors based on sample type
+sample_colors <- ifelse(grepl("unguided", targets$Sample_Name), "forestgreen", "orange")
+# Verify the color assignment
+print(data.frame(Sample = targets$Sample_Name, Color = sample_colors))
+
+
+# 3 Plot the density curves with the new color scheme
+plot(density(ALLbetas[,1]), col=sample_colors[1], xlab="Beta value", ylim=c(0, 3),
+     main="Unguided (Green) vs Guided (Orange)", lwd=2)
+# Add density curves for the rest of the samples
+invisible(sapply(2:ncol(ALLbetas), function(x) {
+  lines(density(ALLbetas[,x]), col=sample_colors[x], lwd=2)
+}))
+# Add legend
+legend("topright", c("Unguided", "Guided"), text.col=c("forestgreen", "orange"))
+```
+
+### Filtering
+```{r}
+library(ChAMP)
+
+dim(ALLbetas) # 891,492
+
+
+ALLbetas.noSnp <- rmSNPandCH(ALLbetas, rmcrosshyb = FALSE)
+nrow(ALLbetas.noSnp) # 889044 
+
+# cpgs geblieben %
+cpgs_percent <-  nrow(ALLbetas.noSnp)*100/nrow(ALLbetas) 
+cpgs_percent #99.7254%
+```
+
+# Annotation
+```{r}
+nrow(ALLbetas.noSnp) # 889044 
+
+# design matrix
+
+# Remove the underscore and the number that follows
+type <- factor(gsub("_\\d+", "", colnames(ALLbetas.noSnp)))
+# Set "unguided" as the reference level
+type <- relevel(type, ref = "unguided")
+
+type
+
+design <- model.matrix(~type)
+design
+
+# 1. try fdr=0,01 coef=1
+annotation_01 <- cpg.annotate("array", object=ALLbetas.noSnp, what = "Beta", arraytype = "EPICv2", epicv2Filter = "mean", epicv2Remap = TRUE, analysis.type="differential", design=design, coef=1, fdr=0.01) 
+# 010101 designmatrix -> Your contrast returned 776831 individually significant probes.       -> 87,38%
+View(annotation_01)
+
+# 2.try fdr = 0,05 coef =1
+annotation_0.05 <- cpg.annotate("array", object=ALLbetas.noSnp, what = "Beta", arraytype = "EPICv2", epicv2Filter = "mean", epicv2Remap = TRUE, analysis.type="differential", design=design, fdr=0.05, coef= 1)
+#Your contrast returned 805729 individually significant probes.   -> 90.6287%
+```
+
+# Calling DMRs
+```{r}
+
+############ tries with input annotation_0.01 #####################
+dmrs <- dmrcate(annotation_01, lambda=1000, C=2, pcutoff = "fdr", min.cpgs = 3) # c and lambda are default
+dmrs_01_ranges <- extractRanges(dmrs, genome = "hg38")
+dmrs_01_ranges_df <- as.data.frame(dmrs_01_ranges)
+View(dmrs_01_ranges_df) #73,042    13
+
+
+################# tries with annotation_0,05 #########
+dmrs_05 <- dmrcate(annotation_0.05, lambda=1000, C = 2, pcutoff = "fdr", min.cpgs = 3)
+dmrs_05_ranges <- extractRanges((dmrs_05), genome ="hg38")
+dmrs_05_ranges_df <- as.data.frame(dmrs_05_ranges)
+View(dmrs_05_ranges_df) 
+#  74,238 
+```
+
+# filtering DMRs
+```{r}
+dmrs_01_ranges_df #73,042
+
+#### checking the significance --> all are significant
+# filter nach HMFDR <0,01 
+sig_hmfdr_0.01 <- dmrs_01_ranges_df[dmrs_01_ranges_df$HMFDR < 0.01, ]
+View(sig_hmfdr_0.01) 
+# 73,040 ~ 100%
+
+#filter nach min_smoothed-fdr
+sig_min_fdr_0.01 <- dmrs_01_ranges_df[dmrs_01_ranges_df$min_smoothed_fdr < 0.01, ]
+View(sig_min_fdr_0.01) # 100%
+
+
+### filtering according to meandiff
+dmrs_mean_04 <- dmrs_01_ranges_df[dmrs_01_ranges_df$meandiff >= 0.4, ]
+View(dmrs_mean_04)
+# 0,1 -> 69,103 entries
+# 0,3 -> 57,799 entries
+# 0,4 -> 52,846 entries
+```
+
+# DMRs on chr13
+```{r}
+chr13_dmrs <- dmrs_mean_04[dmrs_mean_04$seqnames == "chr13",]
+View(chr13_dmrs) #1298
+```
+
+
+# plotting one of the top DMRs
+```{r}
+groups <- c(unguided="forestgreen", guided="orange")
+cols <- groups[as.character(type)]
+DMR.plot(ranges=dmrs_01_ranges, dmr=3, CpGs=annotation_01,
+what = "Beta", arraytype = "EPICv2", phen.col=cols, genome = "hg38")
+
+# save as pdf
+#pdf("DMR_plot.pdf", width = 8, height = 6)  # Open PDF device
+#DMR.plot(ranges=dmrs_01_ranges, dmr=3, CpGs=annotation_01, 
+         #what = "Beta", arraytype = "EPICv2", phen.col=cols, genome = "hg38")
+#dev.off()  # Close PDF device
+
+# save a static image 
+#html_file <- "DMR_plot.html"
+#png("DMR_plot.png", width = 800, height = 600, res = 150)
+#DMR.plot(ranges=dmrs_01_ranges, dmr=3, CpGs=annotation_01, 
+        #what = "Beta", arraytype = "EPICv2", phen.col=cols, genome = "hg38")
+#dev.off()
+```
+
+
+
+
+# ALLMs
+```{r}
+# get ALLMs
+dim(ALLbetas) # 891,492
+ALLMs <- minfi::logit2(ALLbetas)
+nrow(ALLMs) #891492
+
+# Filtering
+ALLMs.noSNPs <- rmSNPandCH(ALLMs, rmcrosshyb = FALSE)
+nrow(ALLMs.noSNPs) # 889044 same as allbetas after filtering
+
+# Annotation
+design
+AllMs_annotate <- cpg.annotate("array", object=ALLMs.noSNPs, what = "M", arraytype = "EPICv2", epicv2Filter = "mean",
+epicv2Remap = TRUE, analysis.type="differential",design=design, coef=1, fdr=0.01)
+#Your contrast returned 776831 individually significant probes
+# the same by all beta 0101 design
+
+
+# 2. try with coef 1 and fdr 0,001
+AllMs_annotate_001_1 <- cpg.annotate("array", object=ALLMs.noSNPs, what = "M", arraytype = "EPICv2", epicv2Filter = "mean",
+epicv2Remap = TRUE, analysis.type="differential",design=design, coef=1, fdr=0.001)
+#Your contrast returned 727278 individually significant probes. 
+
+
+#3. try with coef 2 and fdr 0,001
+#AllMs_annotate <- cpg.annotate("array", object=ALLMs.noSNPs, what = "M", arraytype = "EPICv2", epicv2Filter = "mean",epicv2Remap = TRUE, analysis.type="differential",design=design, coef=2, fdr=0.001)
+# no probes
+
+
+# DMRCate
+#1. try default 
+dmrs <- dmrcate(AllMs_annotate_001_1, lambda=1000, C=2, pcutoff = "fdr", min.cpgs = 3) 
+
+results.ranges <- extractRanges(dmrs, genome = "hg38")
+results.ranges_df <- as.data.frame(results.ranges)
+dim(results.ranges_df) 
+#73116    13
+#70216    13
+```

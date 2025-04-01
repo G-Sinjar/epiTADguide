@@ -1,0 +1,383 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+
+```{r}
+plot(cars)
+```
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
+
+
+
+####################################### script ################################
+
+
+# library
+```{r}
+library(minfi)
+library("IlluminaHumanMethylationEPICv2manifest")
+```
+
+# Reading the SampleSheet file
+```{r}
+RawDataDir <- "C:\\Users\\ghaza\\Documents\\ghazal\\Bioinformatik_Fächer\\Masterarbeit_Project\\Data\\RawData\\epic_data\\2024_071_ILL_METUVG_N_8\\METUVG"
+
+targets <- read.metharray.sheet(RawDataDir)
+```
+
+# Load methydata from idat files 
+```{r}
+RGset <- read.metharray.exp(targets = targets)
+
+manifest <- getManifest(RGset)
+#manifest
+
+raw_normalised <- preprocessRaw(RGset)
+```
+
+# Normalisation
+```{r}
+set.seed(123)
+SWAN_normalised <- preprocessSWAN(RGset, raw_normalised)
+```
+
+
+# Filtering
+```{r}
+#---------------first level filtering: cpgs that passed the threshold in all samples ----------
+detectp <- detectionP(RGset)
+#dim(detectp) #936990      8
+
+# 2. Absent vector
+all.equal(row.names(SWAN_normalised), row.names(detectp))  #TRUE
+absent <- apply(detectp, 1, function(x) sum(x>0.01)) 
+#table(absent) #-> 911931 -_>  97.33%
+
+# 3. Filtering SWAN: Absent == 0 --> the probe is relaiably detected in all samples
+SWAN_filtered_0.01 <- SWAN_normalised[absent == 0]  
+#dim(SWAN_filtered_0.01) # 911931      8
+```
+
+# Map to the Genome:
+```{r}
+Geno_SWAN_filtered_0.01 <- mapToGenome(SWAN_filtered_0.01, mergeManifest = TRUE)
+```
+
+# Convert GenoMethylSet to a GenoRatioSet (Beta + M): 
+```{r}
+ratio_geno_Swan_0.01 <- ratioConvert(Geno_SWAN_filtered_0.01,what = "both", keepCN= TRUE)
+dim(ratio_geno_Swan_0.01) #905075      8
+```
+
+# removing SNPs 
+```{r}
+snps <- getSnpInfo(ratio_geno_Swan_0.01)
+ratio_geno_Swan_0.01 <- addSnpInfo(ratio_geno_Swan_0.01)
+ratio_geno_Swan_0.01_NoSNP <- dropLociWithSnps(ratio_geno_Swan_0.01, snps = c("SBE", "CpG"), maf = 0)
+```
+
+# Get annotation data
+```{r}
+# 1- annotate
+annotation <- getAnnotation(ratio_geno_Swan_0.01_NoSNP)
+annotation_df <- as.data.frame(annotation)
+View(annotation_df)
+
+
+
+# 1a. Beta values
+ratio_geno_Swan_0.01_NoSNP_Beta <- getBeta(ratio_geno_Swan_0.01_NoSNP)
+ratio_geno_Swan_0.01_NoSNP_Beta_df <- as.data.frame(ratio_geno_Swan_0.01_NoSNP_Beta)
+
+# 1b. M values
+M_values_0.01 <- getM(ratio_geno_Swan_0.01_NoSNP)
+M_values_0.01_df <- as.data.frame(M_values_0.01)
+
+# 1c. see cpgs of CLDN10 gene -> ps: those are just the cpgs that are associated with cldn10 according to UCSC, please check the DMR to see other cpgs in the near redion.
+CpGs_CLDN10 <- annotation_df[annotation_df$UCSC_RefGene_Name == "CLDN10", ]   #15
+View(CpGs_CLDN10)
+
+
+
+# 2. Combine methylation values with annotation:
+if (identical(rownames(annotation_df),rownames(ratio_geno_Swan_0.01_NoSNP_Beta))){ 
+    annotated_with_betas <- cbind(annotation, ratio_geno_Swan_0.01_NoSNP_Beta)
+} 
+dim(annotated_with_betas) # 891492     50
+annotated_with_betas_df <- as.data.frame(annotated_with_betas)
+View(annotated_with_betas_df)
+```
+
+
+# Save / retreat annotation_with_beatas_df and CpGs_CLDN10
+```{r}
+Swan_0.01_Beta_rownames <- cbind(CpGs = rownames(ratio_geno_Swan_0.01_NoSNP_Beta_df), ratio_geno_Swan_0.01_NoSNP_Beta_df)
+writexl::write_xlsx(Swan_0.01_Beta_rownames, "./Output/2-Beta_values_SWAN_0.01.xlsx", col_names = TRUE)
+
+M_values_0.01_df_rownames <- cbind(CpGs = rownames(M_values_0.01_df), M_values_0.01_df)
+writexl::write_xlsx(M_values_0.01_df_rownames, "./Output/3-M_values_SWAN_0.01.xlsx", col_names = TRUE)
+
+
+annotated_with_betas_rownames <- cbind(CpGs = rownames(annotated_with_betas_df), annotated_with_betas_df)
+writexl::write_xlsx(annotated_with_betas_rownames, "./Output/4-annotation_0.01_with_betas.xlsx", col_names = TRUE)
+
+CpGs_CLDN10_with_rownames <- cbind(CpGs = rownames(CpGs_CLDN10), CpGs_CLDN10)
+writexl::write_xlsx(CpGs_CLDN10_with_rownames, "./Output/5-CpGs_of_CLDN10.xlsx", col_names = TRUE)
+
+
+
+
+
+# the 3 excel tables are already created --> load the excel tables
+library(readxl)
+
+
+annotated_with_betas_df <- read_excel("./Output/4-annotation_0.01_with_betas.xlsx", col_names = TRUE)
+CpGs_CLDN10 <- read_excel("./Output/CpGs_of_CLDN10.xlsx", col_names = TRUE)
+ratio_geno_Swan_0.01_NoSNP_Beta_df <- read.excel("./Output/2-Beta_values_SWAN_0.01", col_names= TRUE)
+M_values_0.01_df <- read_excel("./Output/3-M_values_SWAN_0.01.xlsx", col_names = TRUE)
+```
+
+
+
+
+
+
+# Vorschritte für Finding DMPs 
+```{r}
+#   beta values -> retreat excel table
+ratio_geno_Swan_0.01_NoSNP_Beta_df
+
+#   M-values -> retreat excel table
+M_values_0.01_df
+
+
+# pheno
+pheno <- pData(ratio_geno_Swan_0.01_NoSNP)$Sample_Group
+
+# or
+# Convert guide_status to a factor (if it isn't already)
+guide_status <- factor(pData(ratio_geno_Swan_0.01_NoSNP)$Sample_Group)
+# Change the reference level to "unguided"
+guide_status <- relevel(guide_status, ref = "unguided")
+
+
+
+########## computing the beta values #############
+# Subset the columns for unguided and guided samples
+beta_unguided <- ratio_geno_Swan_0.01_NoSNP_Beta[, c(1, 3, 5, 7)]  # Unguided samples
+beta_guided <- ratio_geno_Swan_0.01_NoSNP_Beta[, c(2, 4, 6, 8)]    # Guided samples
+
+# Compute row-wise mean for each group
+mean_beta_unguided <- rowMeans(beta_unguided)
+mean_beta_guided <- rowMeans(beta_guided)
+
+# Compute the mean difference (guided - unguided)
+#Beta_log2_meanSubstraction <- log2(mean_beta_guided - mean_beta_unguided)    # NAs wurde erzeugt
+Beta_log2mean_Substraction <- log2(mean_beta_guided) - log2(mean_beta_unguided)
+
+
+
+
+########## computing the M values #############
+# Subset the columns for unguided and guided samples
+M_unguided <- M_values_0.01_df[, c(1, 3, 5, 7)]  # Unguided samples
+M_guided <- M_values_0.01_df[, c(2, 4, 6, 8)]    # Guided samples
+
+# Compute row-wise mean for each group
+mean_M_unguided <- rowMeans(M_unguided)
+mean_M_guided <- rowMeans(M_guided)
+
+# Compute the mean difference (guided - unguided)
+M_mean_difference <- mean_M_guided - mean_M_unguided
+
+# add M_mean_difference and Beta_mean_difference later to the dmp tables
+```
+
+
+# Finding DMPs to check if the 10 cpgs have a sig. p-value 
+```{r}
+# 1. try
+dmp <- dmpFinder(ratio_geno_Swan_0.01_NoSNP_Beta, pheno = guide_status, type = "categorical", qCutoff = 1, shrinkVar = FALSE) 
+options(scipen = 999)
+View(dmp)
+
+## 2. try with schrink
+dmp_shrink <- dmpFinder(ratio_geno_Swan_0.01_NoSNP_Beta, pheno = pheno, type = "categorical", qCutoff = 1, shrinkVar = TRUE) 
+#Warnung: row names of contrasts don't match col names of coefficients
+View(dmp_shrink)
+```
+
+# Editing the DMP table
+```{r}
+################## Add beta_mean_difference #############  change according to dmp table name #################
+# 1. Match the row names of dmp with the names in mean_difference
+matching_indices <- match(rownames(dmp), names(mean_difference))
+# Check if matching_indices contains any NA values (which means a row wasn't found)
+any(is.na(matching_indices)) # false
+
+
+# 2. Add the matched values to the new column `beta_difference` in dmp
+dmp$beta_difference <- mean_difference[matching_indices]
+
+
+# 3. check it worked
+dmp["cg24426691_TC11", ]$beta_difference  # -0.1545998
+mean_difference["cg24426691_TC11"]        # -0.1545998 
+
+mean_difference["cg06428163_BC21"]      # -0.2349488 
+dmp["cg06428163_BC21",]$beta_difference #  -0.2349488 
+
+
+
+################## Add M_mean_difference #############  change according to dmp table name #################
+# 1. Match the row names 
+matching_indices_M <- match(rownames(dmp), names(M_mean_difference))
+
+# Check if matching_indices contains any NA values (which means a row wasn't found)
+if (any(is.na(matching_indices_M))) {
+  print("Warning: Some rows in dmp were not found in mean_difference!")
+}
+
+# 2. Add the matched values to the new column `beta_difference` in dmp
+dmp$M_difference <- M_mean_difference[matching_indices_M]
+
+
+
+# 3. check it worked
+dmp["cg24426691_TC11", ]$M_difference  # -1.126752
+M_mean_difference["cg24426691_TC11"]   # -1.126752 
+
+M_mean_difference["cg06428163_BC21"]      #  -1.577501
+dmp["cg06428163_BC21",]$M_difference      #  -1.577501
+
+View(dmp)
+```
+# Add GenType column for volcanoplot
+```{r}
+library(dplyr)
+library(readxl)
+
+cpgs_inCLDN10_AB <- read_excel("./Output/6_cpgs_inCLDN10_A+B.xlsx", col_names = TRUE)
+
+# Merge dmp with cpgs_inCLDN10_AB, keeping all rows from dmp
+dmp <- merge(dmp, cpgs_inCLDN10_AB[, c("CpGs", "GenType")], by = "CpGs", all.x = TRUE)
+
+# Ersetze NA-Werte in GenType mit "Other"
+dmp$GenType[is.na(dmp$GenType)] <- "Other"
+  
+
+View(dmp)
+```
+
+
+# Save DMP table as excel 
+```{r}
+dmp_with_rownames <- cbind(CpGs = rownames(dmp), dmp)
+writexl::write_xlsx(dmp_with_rownames, "./Output/7-DMPs_NoShrink_0,01.xlsx")
+
+#retreave the table
+library(readxl)
+dmp <- read_excel("./Output/7-DMPs_NoShrink_0,01.xlsx", col_names = TRUE)
+```
+
+
+#  Volcano plot
+```{r}
+library(ggplot2)
+library(plotly)
+library(htmlwidgets)
+
+# Make sure 'GenType' is a factor with "Other" last (for color control)
+dmp$GenType <- as.factor(dmp$GenType)
+
+# Define custom colors (gray for "Other")
+color_palette <- c("CLDN10 Iso-A" = "blue", "CLDN10 Iso-B" = "purple", "Targeted CpG" = "green", "Other" = "gray")
+
+# Create ggplot
+plot_m <- ggplot(dmp, aes(y = -log10(pval), x = M_difference, color = GenType, text = paste(CpG, "<br>FC:", M_difference, "<br>p.val:", pval))) +
+  geom_point(size = 0.7, alpha = ifelse(dmp$GenType == "Other", 0.3, 1)) +  # Make "Other" more transparent
+  geom_hline(yintercept = -log10(0.025), linetype = "dashed", color = "red") + 
+  geom_vline(xintercept = c(-0.2, 0.2), linetype = "dashed", color = "red") +
+  labs(x = "FC = log(M/U)", y = "-log10(p-value)", title = "dmps") +
+  scale_color_manual(values = color_palette) +  # Set custom colors
+  guides(color = guide_legend(title = "CpG Categories")) +
+  theme_minimal()
+
+
+# Convert to plotly (disable hover for "Other" points)
+#interactive_plot <- ggplotly(plot_m, tooltip = "text")
+
+#for (i in seq_along(interactive_plot$x$data)) {
+#  if ("name" %in% names(interactive_plot$x$data[[i]]) && interactive_plot$x$data[[i]]$name == "Other") {
+#    interactive_plot$x$data[[i]]$hoverinfo <- "none"  # Disable hover for "Other"
+#  }
+#}
+
+
+# Save as an interactive HTML file
+#saveWidget(interactive_plot, "./Plots/dmps_CLDN10_colored.html", selfcontained = TRUE)
+```
+
+# since the html is so slow due to too many cpgs it is better to do a primary filter with pvalue 
+```{r}
+library(dplyr)  
+
+# Keep only CpGs with significant p-values or non-"Other" categories
+dmp_filtered <- dmp %>% filter(GenType != "Other" | pval < 0.08) 
+dim(dmp_filtered) # 65430    7
+
+
+library(ggplot2)
+library(plotly)
+library(htmlwidgets)
+
+pval <- 0.02
+y_intercept <- -log10(pval)
+x_intercepts <- c(-0.7, 0.7)
+
+
+plot_m <- ggplot(dmp_filtered, aes(y = -log10(pval), x = M_difference, color = GenType, 
+                                   text = paste(CpGs, "<br>FC:", round(M_difference, 5), "<br>p.val:", round(pval, 5)))) +
+  geom_point(size = 0.7, alpha = ifelse(dmp_filtered$GenType == "Other", 0.3, 1)) +  
+  geom_hline(yintercept = y_intercept, linetype = "dashed", color = "red") + 
+  geom_vline(xintercept = x_intercepts, linetype = "dashed", color = "red") +
+
+  # Add labels at the intercept points
+  annotate("text", x = max(dmp_filtered$M_difference) * 0.95, y = y_intercept*0.9, 
+           label = paste("p-val =", pval), hjust = 0, vjust = -1, color = "red", fontface = "bold") +  # Y-axis label
+  
+  annotate("text", x = x_intercepts[1]*0.9, y = min(-log10(dmp_filtered$pval)) * 1.1, 
+           label = paste(x_intercepts[1]), hjust = -0.2, vjust = 1.5, color = "red") +  # Left X-axis label
+  
+  annotate("text", x = x_intercepts[2]*0.9, y = min(-log10(dmp_filtered$pval)) * 1.1, 
+           label = paste(x_intercepts[2]), hjust = 1.2, vjust = 1.5, color = "red") +  # Right X-axis label
+
+  labs(x = "FC = log²(M/U)", y = "-log10(p-value)", title = "dmps") +
+  scale_color_manual(values = color_palette) +
+  guides(color = guide_legend(title = "CpG Categories")) +
+  theme_minimal()
+
+interactive_plot <- ggplotly(plot_m, tooltip = "text")
+
+# Remove hover tooltips for "Other" points
+#for (i in seq_along(interactive_plot$x$data)) {
+#  if ("name" %in% names(interactive_plot$x$data[[i]]) && interactive_plot$x$data[[i]]$name == "Other") {
+#    interactive_plot$x$data[[i]]$hoverinfo <- "none"
+#  }
+#}
+
+# Save as an interactive HTML file
+saveWidget(interactive_plot, "./Plots/dmps_CLDN10_colored_filtered_0.02.html", selfcontained = TRUE)
+
+```

@@ -1,0 +1,244 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+
+```{r}
+plot(cars)
+```
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
+
+
+
+
+
+
+# library + Packages
+```{r}
+library(minfi)
+if (!requireNamespace("minfiData", quietly = TRUE)) {
+    BiocManager::install("minfiData")
+}
+BiocManager::install("IlluminaHumanMethylation450kmanifest")
+
+```
+
+
+# Reading the SampleSheet file
+```{r}
+baseDir <- system.file("extdata", package="minfiData")
+ex_targets <- read.metharray.sheet(base = baseDir)
+
+save_in_dir <- "C:/Users/ghaza/Documents/ghazal/Bioinformatik_Fächer/Masterarbeit_Project/Results/"
+
+writexl::write_xlsx(ex_targets, "C:/Users/ghaza/Documents/ghazal/Bioinformatik_Fächer/Masterarbeit_Project/Results/mindi-sampleSheet.xlsx")
+```
+
+
+# Load raw methydata from idat files 
+```{r}
+RGset_ex <- read.metharray.exp(targets = ex_targets)
+RGset_ex
+
+############## Exploring the RGset Object ################
+dim(RGset_ex)  #622399      6
+head(assay(RGset_ex, "Red"))
+head(assay(RGset_ex, "Green")) 
+
+pd_ex <- pData(RGset_ex)
+
+library(IlluminaHumanMethylation450kmanifest)
+
+manifest <- getManifest(RGset_ex)
+manifest
+Probe_Infos <- getProbeInfo(manifest)
+Probe_Infos # 135476      8
+
+probeIDs_ex <- featureNames(RGset_ex)  # For RGChannelSet or MethylSet
+duplicates_ex <- table(probeIDs_ex)
+#1. one way
+duplicates_ex[duplicates_ex > 1] # = 0 --> that means no duplicates
+# 2. another way
+anyDuplicated(probeIDs_ex)
+```
+
+
+# Quality control:
+```{r}
+# plot raw densities
+png(file.path(save_in_dir,"ex_red_green_channel_plot.png"), width = 800, height = 600)
+plot(density(as.vector(assay(RGset_ex, "Red"))), main = "Channel Intensities", lwd = 2) 
+lines(density(as.vector(assay(RGset_ex, "Green"))), col = "green", lwd = 2)
+legend("topright", legend = c("Red Channel", "Green Channel"), col = c("black", "green"), lwd = 2)
+dev.off()
+
+# badewanne plot: Beta plot
+densityPlot(RGset_ex, sampGroups = ex_targets$status, main ="Beta values distribution of raw data", xlab = "Beta")
+
+## bean plot
+densityBeanPlot(RGset_ex, sampGroups = ex_targets$status)
+
+
+##QC report
+qcReport(RGset_ex, sampGroups = ex_targets$Array,  pdf = "qcReport_ex.pdf" )
+controlStripPlot(RGset_ex, controls="BISULFITE CONVERSION II")
+
+
+# MDS plot: samples PCA
+mdsPlot(RGset_ex, sampNames = ex_targets$Sample_Name, sampGroups = ex_targets$status)
+mdsPlot(ex_SWAN_normalised, sampNames = ex_targets$Sample_Name, sampGroups = ex_targets$status, main = "Beta MDS 1000 most variable positions SWAN Normalised")
+
+
+# good bad sampe plot
+raw_normalised_ex <- preprocessRaw(RGset_ex)
+#log2 Medien plot: Methylated and unmethylated intensities
+qc_ex <- getQC(raw_normalised_ex)
+raw_normalised_ex <- addQC(raw_normalised_ex, qc_ex)
+plotQC(qc_ex)
+head(pData(raw_normalised_ex))
+
+# Badewanne mit probe types
+pdf("plot_comparison_ex.pdf", width=12, height=6)  
+par(mfrow=c(1,2))
+plotBetasByType(raw_normalised_ex[,1], main = "Raw")
+dev.off()
+```
+
+# Normalisation
+```{r}
+library(IlluminaHumanMethylation450kmanifest)
+
+ex_noob_normalised <- preprocessNoob(RGset_ex)
+set.seed(123)
+ex_SWAN_normalised <- preprocessSWAN(RGset_ex, raw_normalised_ex)
+set.seed(123)
+ex_noob.swan_normalised <- preprocessSWAN(RGset_ex, mSet = ex_noob_normalised, verbose = TRUE)
+
+ex_Quantile <- preprocessQuantile(RGset_ex, fixOutliers = TRUE,removeBadSamples = TRUE, badSampleCutoff = 10.5, quantileNormalize = TRUE, stratified = TRUE, mergeManifest = FALSE, sex = NULL)
+ex_funnorm <- preprocessFunnorm(RGset_ex)
+
+############### Exploring the MethylSet object #############
+dim(ex_SWAN_normalised) #485512      6
+dim(ex_Quantile) # 
+head(getM())
+head(getMeth())
+head(getUnmeth())
+
+# Beta-values
+ex_noobnorm.beta_values <- getBeta(ex_noob_normalised) 
+ex_noobnorm.beta_values_df <- as.data.frame(ex_noobnorm.beta_values)
+
+
+# Beta values plot
+densityPlot(raw_normalised_ex,sampGroups = ex_targets$status,main = "Beta Values distribution after raw normalisation", pal = rainbow(length(unique(ex_targets$status))))
+
+densityPlot(ex_noob_normalised, sampGroups = ex_targets$status ,main = "Beta values distribution after Noob", pal = rainbow(length(unique(ex_targets$status))))
+
+densityPlot(ex_SWAN_normalised, sampGroups = ex_targets$status , main = "Beta values distribution after SWAN normalisation", pal = rainbow(length(unique(ex_targets$status))))
+
+densityPlot(ex_noob.swan_normalised,sampGroups = ex_targets$status, main = "Beta values distribution after Noob-SWAN", pal = rainbow(length(unique(ex_targets$status))))
+
+densityPlot(getBeta(ex_funnorm), sampGroups = ex_targets$status, main = "Beta values distribution after Funnorm", pal = rainbow(length(unique(ex_targets$status))))
+
+densityPlot(getBeta(ex_Quantile), sampGroups = ex_targets$status, main = "Beta values distribution after Quantile", pal = rainbow(length(unique(ex_targets$status))) )
+
+# Badewanne mit probe types
+plotBetasByType(ex_SWAN_normalised[,1], main = "SWAN")
+
+```
+### weiter nach der Webseite
+```{r}
+Rset <- ratioConvert(raw_normalised_ex, what = "both", keepCN = TRUE)
+Rset
+
+GRset <- mapToGenome(Rset)
+GRset
+
+gr_ex <- granges(GRset)
+head(gr_ex, n = 3)
+
+ex_annotation <- getAnnotation(GRset)
+names(ex_annotation)
+
+
+controlStripPlot(RGset, controls = "BISULFITE CONVERSION II") #### umgekehrt ????
+
+predictedSex <- getSex(GRset, cutoff = -2)$predictedSex
+head(predictedSex)
+plotSex(getSex(GRset, cutoff = -2)) ### fehler 
+
+snps <- getSnpInfo(GRset)
+head(snps,10)
+
+
+beta <- getBeta(ex_funnorm)
+age  <- pData(ex_funnorm)$age
+dmp_ex <- dmpFinder(beta, pheno = age  , type = "continuous")
+head(dmp_ex)  ### not the same order in the website
+
+
+snps_ex <- getSnpBeta(RGset_ex)
+head(snps_ex)
+```
+
+## add chromosomal band location
+```{r}
+head(ex_annotation)
+
+BiocManager::install("biomaRt")
+
+library(biomaRt)
+
+
+#1. Connect to the Ensembl database:
+mart <- useMart("ensembl", dataset = "hsapiens_gene_ensembl")
+
+#2. Query cytobands for the data:
+# Add a new column for chromosome without "chr" prefix
+ex_annotation$chr_numeric <- gsub("chr", "", ex_annotation$chr)
+
+# Retrieve cytoband information
+band_info <- getBM(attributes = c("chromosome_name", "start_position", 
+                                  "end_position", "band"),
+                   filters = c("chromosome_name", "start", "end"),
+                   values = list(ex_annotation$chr_numeric, 
+                                 ex_annotation$pos, 
+                                 ex_annotation$pos),
+                   mart = mart)
+
+# add cytobands to the annotation table
+ex_annotation <- merge(ex_annotation, band_info, 
+                         by.x = c("chr_numeric", "pos"), 
+                         by.y = c("chromosome_name", "start_position"))
+
+
+### still didnt run ################
+library(dplyr)
+batches <- split(ex_annotation, ceiling(seq_along(1:nrow(ex_annotation)) / 10000))
+
+results <- lapply(batches, function(batch) {
+    getBM(attributes = c("chromosome_name", "start_position", "end_position", "band"),
+          filters = c("chromosome_name", "start", "end"),
+          values = list(batch$chr_numeric, batch$pos, batch$pos),
+          mart = mart)
+})
+
+final_results <- bind_rows(results)
+
+# Add cytobands to the annotation table
+ex-annotation <- merge(ex_annotation, final_results, 
+                         by.x = c("chr_numeric", "pos"), 
+                         by.y = c("chromosome_name", "start_position"))
+###############################
+
+
+```

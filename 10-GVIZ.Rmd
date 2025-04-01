@@ -1,0 +1,484 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+
+```{r}
+plot(cars)
+```
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
+
+
+############ script ################
+
+# get Annotation table
+```{r}
+library(readxl)
+annotated_with_betas <- read_excel("./Output/4-annotation_with_betas.xlsx", col_names = TRUE)
+View(annotated_with_betas)
+```
+
+
+# 1- create the gr_cpgs_AB Granges for ploting
+## 1a- filtering annotation table to get cldn10-AB CPGs infos:
+```{r}
+library(dplyr)
+#region_of_interest <- [95433599,95579759]
+
+cpgs_AB <- annotated_with_betas %>%   
+  filter(chr == "chr13" & pos >= 95433599 & pos <= 95579759) %>%
+  select(CpGs, chr, pos, strand, Islands_Name, Relation_to_Island, UCSC_RefGene_Group, 
+         UCSC_RefGene_Name, UCSC_RefGene_Accession, GencodeV41_Group, GencodeV41_Name, 
+         GencodeV41_Accession, tail(everything(), 8))
+
+# renaming the sample columns
+colnames(cpgs_AB)[(ncol(cpgs_AB)-7):ncol(cpgs_AB)] <- c("unguided_1", "guided_1", "unguided_2", "guided_2", 
+                                                         "unguided_3", "guided_3", "unguided_4", "guided_4")
+
+View(cpgs_AB) # 71 cpgs 13
+```
+
+## 1b- get the pval and FC value from dmp Table
+```{r}
+dmp <- read_excel("./Output/7-DMPs_NoShrink_0,01.xlsx", col_names = TRUE)
+View(dmp)
+
+
+# Perform a left join to add columns from dmp table to filtered_data
+cpgs_AB <- cpgs_AB %>%   left_join(dmp %>% select(CpGs, pval, M_difference, GenType), by = "CpGs")
+
+
+# reorder the columns (# Move all "unguided" first) 
+cpgs_AB <- cpgs_AB %>%
+  select(chr, pos, strand, CpGs, Islands_Name, Relation_to_Island, UCSC_RefGene_Group, 
+         UCSC_RefGene_Name, UCSC_RefGene_Accession, GencodeV41_Group, GencodeV41_Name, 
+         GencodeV41_Accession, pval, M_difference, GenType, 
+         unguided_1, unguided_2, unguided_3, unguided_4,  
+         guided_1, guided_2, guided_3, guided_4)   
+
+View(cpgs_AB)
+
+
+# save table to create the granges
+cpgs_AB_rownames <- cbind(CpGs = rownames(cpgs_AB), cpgs_AB)
+writexl::write_xlsx(cpgs_AB_rownames, "./Output/10-cpgs-AB_for_Granges.xlsx", col_names = TRUE)
+```
+
+## 1c- convert to genomicRanges
+```{r}
+library(GenomicRanges)
+gr_cpgs_AB <- GRanges(seqnames = cpgs_AB$chr,
+              ranges = IRanges(start = cpgs_AB$pos, end = cpgs_AB$pos))#,strand = cpgs_AB$strand)
+
+# Add the remaining columns as metadata to the GenomicRanges object
+mcols(gr_cpgs_AB) <- cpgs_AB[, 4:ncol(cpgs_AB)]
+gr_cpgs_AB
+```
+
+
+
+
+
+
+# 1  GVIZ plot of the whole Iso A + B
+## 1a - first 3 basic tracks (Ideogram, GenomicAxis, Annotation/CpGs)
+```{r}
+library(Gviz)
+
+gen <- "hg38"
+chr <- as.character(unique(seqnames(gr_cpgs_AB)))
+
+itrack <- IdeogramTrack(genome = gen, chromosome = chr )
+gtrack <- GenomeAxisTrack()
+
+
+
+# Define the colors for GenType
+fill_colors <- c("CLDN10 Iso-A" = "blue", "Targeted CpG" = "red", "CLDN10 Iso-B" = "green")
+
+# Create AnnotationTrack with CpGs
+atrack <- AnnotationTrack(gr_cpgs_AB, 
+                          name = "CpGs", 
+                          col = NA,       # Border color
+                          fill = fill_colors[gr_cpgs_AB$GenType], 
+                          id = gr_cpgs_AB$CpGs,
+                          feature = gr_cpgs_AB$GenType)  
+
+# Create the plot
+plotTracks(list(itrack, gtrack, atrack), groupAnnotation = "id")
+```
+## 1b -try sequence track when you zoom in
+```{r}
+if (!requireNamespace("BSgenome.Hsapiens.UCSC.hg38", quietly = TRUE)) {
+    BiocManager::install("BSgenome.Hsapiens.UCSC.hg38")
+}
+
+library(BSgenome.Hsapiens.UCSC.hg38)
+
+strack <- SequenceTrack(Hsapiens, chromosome = chr)
+
+
+
+
+
+
+
+
+
+
+
+
+# creating the Granges for pointplots / and maybe boxplots
+```{r}
+# 1.get the impo columns --> chr pos strand betavalues
+library(dplyr)
+plot_ranges <- cpgs_DMR1 %>% select(chr, pos, strand, tail(names(cpgs_DMR1), 8))
+View(plot_ranges)
+
+# 2. change names of samples
+# Assuming your data frame is named plot_ranges
+
+# Define the new column names for the last 8 columns
+new_column_names <- c("unguided_1", "guided_1", "unguided_2", "guided_2", "unguided_3", 
+                       "guided_3", "unguided_4", "guided_4")
+
+# Replace the last 8 column names in the plot_ranges data frame
+names(plot_ranges)[(ncol(plot_ranges)-7):ncol(plot_ranges)] <- new_column_names
+
+View(plot_ranges)
+
+
+# convert to genomicRanges
+library(GenomicRanges)
+gr <- GRanges(seqnames = plot_ranges$chr,
+              ranges = IRanges(start = plot_ranges$pos, end = plot_ranges$pos))
+              #, strand = plot_ranges$strand)
+# Add the remaining columns as metadata to the GenomicRanges object
+mcols(gr) <- plot_ranges[, 4:ncol(plot_ranges)]
+gr
+
+
+# change the order of the metadat acolumns
+metadata <- mcols(gr)
+print(metadata)
+
+unguided_cols <- grep("^unguided", names(metadata), value = TRUE)
+guided_cols <- grep("^guided", names(metadata), value = TRUE)
+new_order <- c(unguided_cols, guided_cols)
+
+mcols(gr) <- metadata[, new_order]
+print(mcols(gr))
+
+# the order is changed
+gr
+
+```
+
+
+## 1c - beta values pointplot track
+```{r}
+# the strand has to be unique here
+#data = must be a data matrix
+
+# Select the last 8 columns dynamically
+last_8_data <- cpgs_AB[, (ncol(cpgs_AB) - 7):ncol(cpgs_AB)]
+
+dTrack <- DataTrack(gr_cpgs_AB, 
+                    name = "CpGs Beta values",
+                    data = last_8_data)
+ 
+plotTracks(dTrack, groups = rep(c("unguided", "guided"), each = 4),
+           type = c("a", "p"))
+```
+
+## 1d - pvalue
+```{r}
+pvalTrack <- DataTrack(gr_cpgs_AB, 
+                    name = "p-values",
+                    data = mcols(gr_cpgs_AB)$pval,
+                    type = c("l", "p"))
+plotTracks(pvalTrack)
+#plotTracks(list(itrack, gtrack, atrack,pvalTrack))
+```
+
+
+
+## 1E DMR track
+### create DMR Granges 
+```{r}
+library(readxl)
+DMRs <- read_excel("./Output/8-DMRs_0.01_smooth.xlsx", col_names = TRUE)
+View(DMRs)
+
+# check if all numbers are numeric
+DMRs <- DMRs %>%
+  mutate(across(c(start, end, length, p.value), as.numeric))
+
+# create a granges of the DMRs 
+gr_Dmrs <- GRanges(
+  seqnames = DMRs$chr,  # Corrected
+  ranges = IRanges(start = DMRs$start, end = DMRs$end)  # Removed unnecessary width
+)
+
+# Add metadata (p-value)
+mcols(gr_Dmrs) <- DMRs$p.value 
+colnames(mcols(gr_Dmrs)) <- "p.value"
+gr_Dmrs
+```
+### create track
+```{R}
+DmrTrack <- AnnotationTrack(gr_Dmrs, name = "DMRs", col = "pink", fill = "pink",feature = paste("P.val =", round(gr_Dmrs$p.value, 5)))
+
+plotTracks(DmrTrack,from = 95433599, to = 95579759, groupAnnotation= "feature")
+```
+
+
+## 1F TAD Track
+### create TAD Granges
+```{r}
+library(readxl)
+library(dplyr)
+
+bin_size <- 10000
+tad_df <- read_excel("C:/Users/ghaza/Documents/ghazal/Bioinformatik_Fächer/Masterarbeit_Project/Results/TAD results/TAD_data_with_header.xlsx", skip =2)
+View(tad_df)
+
+
+# Convert columns to numeric
+tad_df <- tad_df %>%
+  mutate(across(c(StartPos, EndPos, TadLength), as.numeric))
+
+
+# convert Tad_df to Granges 
+chr_TAD <- "chr13"
+gr_TADs <- GRanges(seqnames = chr_TAD,
+              ranges = IRanges(start = tad_df$StartPos, end = tad_df$EndPos))
+mcols(gr_TADs) <- tad_df[, 1]
+gr_TADs
+```
+### plot tad track
+```{r}
+#from = 95433599, to = 95579759
+TadTrack <- AnnotationTrack(gr_TADs, 
+                            name = "TADs-Skin", 
+                            feature = gr_TADs$TadNr,  
+                            col = "black")
+
+plotTracks(TadTrack,groupAnnotation = "feature", from = 95433599, to = 95579759)
+```
+
+
+## 1G CPG Islands track
+```{r}
+
+```
+
+
+## 1H Gene track
+
+## 1 - Plot all tracks together
+```{r}
+#library(grid)
+
+plotTracks(list(itrack, gtrack, atrack,dTrack, TadTrack,DmrTrack), groups = rep(c("unguided", "guided"), each = 4), type = c("a", "p") , groupAnnotation = "id",from = 95433599, to = 95579759)
+
+# Add custom legend
+legendLabels = c("CLDN10 Iso-A", "Targeted CpG", "CLDN10 Iso-B")
+legendColors = c("blue", "red", "green")
+
+legend_grob <- grid::legendGrob(labels = legendLabels, 
+                                gp = grid::gpar(fill = legendColors, col = legendColors)) 
+
+# Add the legend to the plot
+grid::grid.draw(legend_grob)
+```
+## 1 - saving the plot
+```{r}
+# as a PNG file
+png("./Plots/GVIZ_CLDN10_AB_5.png", width = 2000, height = 1000)
+plotTracks(list(itrack, gtrack, atrack,dTrack, TadTrack,DmrTrack), groups = rep(c("unguided", "guided"), each = 4), type = c("a", "p") , groupAnnotation = "id",from = 95433599, to = 95579759)
+
+
+# Add custom legend
+legendLabels = c("CLDN10 Iso-A", "Targeted CpG", "CLDN10 Iso-B")
+legendColors = c("blue", "red", "green")
+
+legend_grob <- grid::legendGrob(labels = legendLabels, 
+                                gp = grid::gpar(fill = legendColors, col = legendColors)) 
+
+# Add the legend to the plot
+grid::grid.draw(legend_grob)
+dev.off() 
+
+
+
+# as a PDF file
+pdf("./Plots/GVIZ_CLDN10_AB_5.pdf", width = 20, height = 11)  # dimensions in inches
+plotTracks(list(itrack, gtrack, atrack,dTrack, TadTrack,DmrTrack), groups = rep(c("unguided", "guided"), each = 4), type = c("a", "p") , groupAnnotation = "id",from = 95433599, to = 95579759)
+
+# Add custom legend
+legendLabels = c("CLDN10 Iso-A", "Targeted CpG", "CLDN10 Iso-B")
+legendColors = c("blue", "red", "green")
+
+legend_grob <- grid::legendGrob(labels = legendLabels, 
+                                gp = grid::gpar(fill = legendColors, col = legendColors)) 
+
+# Add the legend to the plot
+grid::grid.draw(legend_grob)
+dev.off()  
+```
+
+
+
+# 2  GVIZ plot of the Targeted region (DMR1) --> may be no need for code just zoom in code?!
+## 2a create the target_region table
+```{r}
+library(Gviz)
+
+# from last step of pipeline before annotation
+# granges of only the cpgs on DMR1 (on-target DMR) for GVIZ
+gr_swan <- rowRanges(ratio_geno_Swan_0.01_NoSNP)
+print(gr_swan)
+
+
+# filtering for only cpgs on DMR1
+chr <- "chr13"  
+start_pos <- dmrs_smooth$start[1]  
+end_pos <- dmrs_smooth$end[1]      
+
+cpgs_DMR1 <- subset(gr_swan, seqnames == chr & start(gr_swan) >= start_pos & end(gr_swan) <= end_pos)
+
+# check if filtering worked
+print(length(cpgs_DMR1))  #10
+print(cpgs_DMR1)  # View filtered CpGs
+```
+
+## 2b - first 3 basic tracks  
+```{r}
+chr <- as.character(unique(seqnames(cpgs_DMR1)))
+#gen <- genome(cpgs_DMR1) # didnt work while plotting --> for automation use this --> if all gen are the same ex hg38 then asign just one to the gen variable
+gen <- "hg38"
+
+
+atrack <- AnnotationTrack(cpgs_DMR1, name = "CpG")
+gtrack <- GenomeAxisTrack()
+itrack <- IdeogramTrack(genome = gen, chromosome = chr)
+
+# gen track -> didnt work
+data(geneModels)
+grtrack <- GeneRegionTrack(geneModels, genome = gen,
+                           chromosome = chr, name = "Gene Model")
+```
+
+## 2c - -try sequence track when you zoom in
+```{r}
+if (!requireNamespace("BSgenome.Hsapiens.UCSC.hg38", quietly = TRUE)) {
+    BiocManager::install("BSgenome.Hsapiens.UCSC.hg38")
+}
+
+library(BSgenome.Hsapiens.UCSC.hg38)
+
+strack <- SequenceTrack(Hsapiens, chromosome = chr)
+```
+
+## 2d - beta values pointplot track
+```{r}
+dTrack <- DataTrack(gr, name = "CpGs Beta values")
+plotTracks(dTrack, groups = rep(c("unguided", "guided"), each = 4),
+           type = c("a", "p"), legend=TRUE)
+```
+
+## 2E boxplot track --> not so sinvoll
+```{r}
+library(readxl)
+library(dplyr)
+library(tidyr)
+
+
+cpgs_in_DMR1 <- read_excel("./Output/longformat_cpgs_in_DMR1_forBoxplots.xlsx")
+View(cpgs_in_DMR1)
+
+# Separate guided and unguided samples
+df_guided <- cpgs_in_DMR1 %>% filter(Group == "guided")
+df_unguided <- cpgs_in_DMR1 %>% filter(Group == "unguided")
+
+
+
+# Convert to wide format for Gviz (sample IDs as columns)
+df_guided_wide <- df_guided %>%
+  select(Position, SampleID, BetaValue) %>%
+  pivot_wider(names_from = SampleID, values_from = BetaValue)
+
+df_unguided_wide <- df_unguided %>%
+  select(Position, SampleID, BetaValue) %>%
+  pivot_wider(names_from = SampleID, values_from = BetaValue)
+
+
+
+# Create Gviz DataTrack for boxplots
+track_guided <- DataTrack(
+  data = df_guided_wide[, -1], # Exclude Position column
+  start = df_guided_wide$Position,
+  end = df_guided_wide$Position,
+  chromosome = "chr13",
+  genome = "hg38",
+  type = "boxplot",
+  name = "Guided Samples",
+  col.boxplot = "blue"
+)
+
+track_unguided <- DataTrack(
+  data = df_unguided_wide[, -1],
+  start = df_unguided_wide$Position,
+  end = df_unguided_wide$Position,
+  chromosome = "chr13",
+  genome = "hg38",
+  type = "boxplot",
+  name = "Unguided Samples",
+  col.boxplot = "red"
+)
+```
+
+
+
+## Plot all tracks together
+```{r}
+#plotTracks(list( itrack, gtrack, atrack, grtrack)) # here you can use the from and to argument to zoom in or out
+
+
+# Plot tracks together with boxplots
+plotTracks(list(itrack, gtrack, atrack, grtrack, dTrack),
+  col.axis = "black", groups = rep(c("unguided", "guided"), each = 4),
+           type = c("a", "p"), legend=TRUE)
+
+```
+
+
+## saving the plot
+```{r}
+# Save the plot as a PNG file
+png("./Plots/final_cpg_plot.png", width = 1000, height = 600)
+plotTracks(   list(itrack, gtrack, atrack, grtrack, track_guided, track_unguided),
+  from = min(cpgs_in_DMR1$Position),  to = max(cpgs_in_DMR1$Position),
+  col.axis = "black", type = c("boxplot", "a", "g"))
+dev.off()  
+
+# Save the plot as a PDF file
+pdf("./Plots/final_cpg_plot2.pdf", width = 13, height = 8)  # Set dimensions in inches
+plotTracks( 
+  list(itrack, gtrack, atrack, grtrack, track_guided, track_unguided),
+  from = min(cpgs_in_DMR1$Position),
+  to = max(cpgs_in_DMR1$Position),
+  col.axis = "black")
+dev.off()  # Close the plotting device and save the file
+
+```

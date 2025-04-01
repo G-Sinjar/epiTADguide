@@ -1,0 +1,378 @@
+---
+title: "EPIC RawData Processing"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+
+```{r}
+plot(cars)
+```
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
+
+##Start: 20.11.2024
+
+#Install minfi package
+```{r}
+if (!require("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+
+BiocManager::install("minfi")
+
+library(minfi)
+
+```
+
+# Reading the SampleSheet file
+```{r}
+RawDataDir <- "C:\\Users\\ghaza\\Documents\\ghazal\\Bioinformatik_Fächer\\Masterarbeit_Project\\Data\\RawData\\epic_data\\2024_071_ILL_METUVG_N_8\\METUVG"
+
+targets <- read.metharray.sheet(RawDataDir)
+
+View(targets)
+
+writexl::write_xlsx(targets, "./Output/Samples-targets.xlsx")
+
+
+
+```
+
+# Load methydata from idat files into an object of the class RGChannelSet
+RGChannelSet : raw data from the IDAT files; this data is organized at the probe (not CpG locus) level. This data has two channels: Red and Green.
+```{r}
+RGset <- read.metharray.exp(targets = targets)
+View(RGset) 
+## RGSet: RGChannelSet object
+
+############## Exploring the RGset Object ################
+#Dimension of Data:
+dim(RGset)  # Rows: 1105209 probes, Columns: 8 samples
+
+# Access the red and green intensities:
+head(assay(RGset, "Red"))   # Red channel
+head(assay(RGset, "Green")) # Green channel
+
+# retrieving phenotypic data: Sample metadata
+##pData() is a function that retrieves phenotypic data associated with the object. Phenotypic data refers to metadata about the samples, such as sample labels, group assignments, or experimental conditions.
+
+pd <- pData(RGset)
+pd[,]
+View(pd)
+
+# Access probe annotation 
+head(rowData(RGset)) # 0 columns cause the data are still not mapped to the genome
+```
+
+
+# Quality control:
+```{r}
+## plotting the densities+ saving the plot
+
+# Open PNG device
+png("./Plots/red_green_channel_plot.png", width = 800, height = 600)
+
+# Generate the plot
+plot(density(as.vector(assay(RGset, "Red"))), main = "Red Channel Intensities")
+lines(density(as.vector(assay(RGset, "Green"))), col = "green")
+
+# Close the device to save the plot
+dev.off()
+
+
+## Density plot methylated/ unmethylated data (before normalisation):
+densityPlot(RGset, sampGroups = targets$Sample_Label, main ="Beta values distribution of raw data", xlab = "Beta")
+
+
+## Samples density plotes
+densityBeanPlot(RGset, sampGroups = targets$Sample_Label, sampNames = targets$Sample_Name)
+
+##QC report (all plots in a pdf file)
+qcReport(RGset, sampNames = targets$Sample_Name, sampGroups = targets$Sample_Group0, pdf = "qcReport.pdf" )
+```
+
+
+# Normalisation
+# create a data set on the locus level
+In this step the red and green matrices are combined to calculate M and U signals.
+the output is a MethylSet.
+MethylSet: data organized by the CpG locus level, but not mapped to a genome. This data has two channels: Meth (methylated) and Unmeth (unmethylated). It is the output of different normalization methods.
+Methods recommended: Noob then SWAN
+```{r}
+BiocManager::install("IlluminaHumanMethylationEPICv2manifest")
+library(IlluminaHumanMethylationEPICv2manifest)
+
+## 1.Raw preprocessing: means simply converting the red and the green channel intensities into methylated and un-methylated signals.
+raw_normalised <- preprocessRaw(RGset)
+View(raw_normalised)
+# raw_normalised: a MethylSet object, 936990 x 8 features
+
+##2. Noob (Normal-exponential Out-of-Band Correction) Best For: Datasets with significant background noise and dye biases + Studies focusing on differential methylation analysis.
+noob_normalised <- preprocessNoob(RGset)
+View(noob_normalised)
+
+##3. SWAN: creates a more biologically accurate normalization by using only a subset of probes to define the reference distribution. This avoids over-normalization, which could distort biological signals. 
+set.seed(123)
+SWAN_normalised <- preprocessSWAN(RGset, raw_normalised)
+View(SWAN_normalised)
+dim(SWAN_normalised) #936990      8
+
+##4. Noob then SWAN
+set.seed(123)
+noob.swan_normalised <- preprocessSWAN(RGset, mSet = noob_normalised, verbose = TRUE)
+
+
+############### Exploring the MethylSet object #############
+# 1. Dimensions
+dim(noob_normalised) #this is for all other normalisation methods -> 936990 raws      8 columns
+
+# 2. Access the beta values
+noobnorm.beta_values <- getBeta(noob_normalised)  
+View(noobnorm.beta_values)
+# save the Beta values in an Excel Table: those are not the final beta values -> final is after converting to genoicratioset
+install.packages("writexl")
+noobnorm.beta_values_df <- as.data.frame(noobnorm.beta_values)
+noobnorm.beta_values_df <- cbind(RowName = rownames(noobnorm.beta_values), as.data.frame(noobnorm.beta_values))
+writexl::write_xlsx(noobnorm.beta_values_df, "./Output/noobnorm.beta_values.xlsx")
+
+# save SWAN_normalised in an excel table
+swannorm.beta_values <- getBeta(SWAN_normalised)
+swannorm.beta_values_df <- as.data.frame(swannorm.beta_values)
+swannorm.beta_values_df <- cbind(RowName = rownames(swannorm.beta_values), swannorm.beta_values_df)
+View(swannorm.beta_values_df)
+writexl::write_xlsx(swannorm.beta_values_df, "./Output/swannorm.beta_values.xlsx")
+
+
+# need to plot the beta values to see which normalisation method is the best
+## Raw normalised beta values plot
+densityPlot(raw_normalised,sampGroups = targets$Sample_Label,main = "Beta Values distribution after raw normalisation", pal = rainbow(length(unique(targets$Sample_Label))))
+## Noob beta values plot
+densityPlot(noob_normalised, sampGroups = targets$Sample_Label ,main = "Beta values distribution after Noob", pal = rainbow(length(unique(targets$Sample_Label))))
+## SWAN beta values plot
+densityPlot(SWAN_normalised, sampGroups = targets$Sample_Label , main = "Beta values distribution after SWAN normalisation", pal = rainbow(length(unique(targets$Sample_Label))))
+## SWAN  beta values plot 
+densityPlot(noob.swan_normalised,sampGroups = targets$Sample_Label, main = "Beta values distribution after Noob-SWAN", pal = rainbow(length(unique(targets$Sample_Label))))
+
+
+
+# 3. Access the M values
+head(getM(noob_normalised))
+
+# 4. access sample metadata
+pData(SWAN_normalised)
+
+# 5. access Probe Annotation 
+rowData(noob_normalised) # 0 columns cause the data are still not mapped to the genome
+
+# 6. Access the normalised signal intensities -> see after filtering
+```
+
+We need steps to compare the different types of normalization methods
+
+
+
+# Filtering
+```{r}
+# 1. getting the P-value of each loci
+detectp <- detectionP(RGset)
+dim(detectp) #  936990      8 
+View(detectp)
+
+# 2. Absent vector
+all.equal(row.names(SWAN_normalised), row.names(detectp))  #TRUE
+#This allows us to filter noob using results from detectP. 
+absent <- apply(detectp, 1, function(x) sum(x>0.01))
+table(absent) 
+
+# 911931 good probes > 0,01 p-value
+all(absent== 0) # FALSE -> good 
+
+
+# 3. Filtering SWAN
+SWAN_filtered <- SWAN_normalised[absent == 0]
+View(SWAN_filtered)
+dim(SWAN_filtered) #911931      8
+
+# get beta values after filtering
+SWAN_filtered_beta_values <- getBeta(SWAN_filtered)
+View(SWAN_filtered_beta_values)
+
+# save filtered beta-values
+SWAN.filtered_beta_values_df <- as.data.frame(SWAN_filtered_beta_values)
+SWAN.filtered_beta_values_df <- cbind(RowName = rownames(SWAN_filtered_beta_values), SWAN.filtered_beta_values_df)
+View(SWAN.filtered_beta_values_df)
+writexl::write_xlsx(SWAN.filtered_beta_values_df, "./Output/SWAN.filtered.beta_values.xlsx")
+
+
+######## Exploring noob.filtered MethylSet Object #################
+# The same options from 1 to 5 as before filtering
+#  6. Accessing the normalised signal intensities (not important)
+### Access the unlog normalized methylation signal intensities
+methylated <- getMeth(SWAN_filtered)
+head(methylated)
+methylated ["cg00381604_BC11",]
+### Access the unlog normalized unmethylation signal intensities
+unmethylated <- getUnmeth(noob.filtered)
+head(unmethylated)
+
+```
+
+
+# Map to the Genome:
+GenomicMethylSet : like a MethylSet, but mapped to a genome.
+```{r}
+BiocManager::install("IlluminaHumanMethylationEPICv2ano.20a1.hg38")
+library(IlluminaHumanMethylationEPICv2anno.20a1.hg38)
+
+### which data set should we use to map.. change the GenoMethylset to better name according to the normalization method
+Geno_SWAN_filtered <- mapToGenome(SWAN_filtered)
+View(Geno_SWAN_filtered)
+dim(Geno_SWAN_filtered)
+#a GenomicMethylSet object, 905057 x 8 features
+
+
+###### exploting this object #######
+# 1. Assayes
+assays(Geno_SWAN_filtered) #names(2): Meth Unmeth
+
+# accessing the Methylated signal intensities = same for unmeth assay
+head(assay(Geno_SWAN_filtered, "Meth"))
+
+# 2. genomic information
+granges <- rowRanges(Geno_SWAN_filtered)
+head(names(granges))
+
+granges_df <- as.data.frame(granges)
+View(granges_df)
+dim(granges_df) #905075      5
+
+granges_df <- cbind(cg_Name = names(granges), granges_df)
+writexl::write_xlsx(granges_df, "./Output/granges_probes_genomic_Info.xlsx")
+
+
+# 3. sample matadata -> same like sample sheet
+metadata <- pData(Geno_SWAN_filtered)
+head(metadata)
+
+# get beta
+Geno_SWAN_filtered_beta_values <- getBeta(Geno_SWAN_filtered)
+View(Geno_SWAN_filtered_beta_values)
+```
+
+# Convert GenoMethylSet to a GenoRatioSet (Beta + M): 
+RatioSet : data organized by the CpG locus level, but not mapped to a genome. The data has at least one of two channels: Beta and/or M (logratio of Beta). It may optionally include a CN channel (copy number).
+GenomicRatioSet : like a RatioSet, but mapped to the genome
+```{r}
+ratio_geno_Swan_filtered <- ratioConvert(Geno_SWAN_filtered)
+
+View(ratio_geno_Swan_filtered)
+dim(ratio_geno_Swan_filtered)   
+# Raioset: a GenomicRatioSet object, 905075 x 8 features
+
+## get Beta values
+ratio_geno_SWAN_Beta <- getBeta(ratio_geno_Swan_filtered)
+dim(ratio_geno_SWAN_Beta) # 905075      8
+View(ratio_geno_SWAN_Beta)
+
+# check the content of the ratio dataset
+assays(ratio_geno_Swan_filtered)
+##OUTPUT:
+#List of length 2
+#names(2): Beta CN
+
+```
+
+# Get annotation data
+```{r}
+# 1. Extract annotation from the dataset:
+annotation <- getAnnotation(ratio_geno_Swan_filtered)
+dim(annotation) #905075 * 42
+annotation[1:6, 1:5]
+
+# 2. Combine methylation values with annotation:
+annotated_data <- cbind(annotation, ratio_geno_SWAN_Beta)
+View(annotated_data)
+head(annotated_data)
+dim(annotated_data) # 905075     50 also annotation with the beta values in 8 samples
+
+# save annotation data
+annotated_data_df <- as.data.frame(annotated_data)
+writexl::write_xlsx(annotated_data_df, "./Output/ratio_geno_swan_filtered_beta_annotated.xlsx")
+
+```
+
+
+# finding DMRs
+```{r}
+# 1. Define the phenotype of interest
+pheno <- pData(ratio_geno_Swan_filtered)$Sample_Group
+pheno
+designMatrix <- model.matrix(~ pheno)
+
+# 2. Run the algorithm with B=0 permutation on the Beta-values, with a medium difference cutoff, say 0.2 (which corresponds to 20\% difference on the Beta-values):
+dmrs <- bumphunter(ratio_geno_Swan_filtered, design = designMatrix, cutoff = 0.2, B=0, type="Beta")
+View(dmrs)
+## since the bumps are not too many only 100 no need to increase cutoff but it can be decreased
+
+
+# 3. Once you have decided on the cutoff, run the algorithm with a large number of permutations, say B=1000:
+# Parallel computing
+library(doParallel)
+registerDoParallel(cores = 4)
+dmrs2 <- bumphunter(ratio_geno_Swan_filtered, design = designMatrix, cutoff = 0.2, B=100, type="Beta")
+# it took 5 min without parallel
+
+names(dmrs2) # "table"           "coef"            "fitted"          "pvaluesMarginal" "null"            "algorithm" 
+View(dmrs2$table)
+dim(dmrs2$table) #100 14
+
+dmrs2$table$DMR_length <- dmrs2$table$end - dmrs2$table$start
+dim(dmrs2$table)
+View(dmrs2$table)
+
+# save the dmrs2$table 
+writexl::write_xlsx(dmrs2$table, "./Output/DMRs.xlsx")
+
+head(dmrs2$coef)
+```
+# finding DMPs
+```{r}
+ratio_geno_SWAN_Beta 
+
+```
+
+
+#### ab hier ist nicht fertig ######
+
+# filter dmrs using p-value or fwer??
+
+# Annotate DMRs
+```{r}
+BiocManager::install("annotatr")
+library(annotatr)
+if (!requireNamespace("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+BiocManager::install("TxDb.Hsapiens.UCSC.hg38.knownGene")
+
+
+# 1. Extract DMR coordinates
+dmrs_regions <- dmrs2$table[, c("chr", "start", "end")]
+
+
+# 2. Build annotation object for the human genome ######### didnt function 
+hg38_annotations <- build_annotations(genome = "hg38", annotations = "hg38_genes_promoters")
+
+# 3. Annotate DMRs
+annotated_dmrs <- annotate_regions(
+    regions = dmrs_regions,
+    annotations = annotations,
+    ignore.strand = TRUE
+)
+```
+
