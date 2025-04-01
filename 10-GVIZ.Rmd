@@ -289,7 +289,7 @@ plotTracks(TadTrack,groupAnnotation = "feature", from = 95433599, to = 95579759)
 ```{r}
 #library(grid)
 
-plotTracks(list(itrack, gtrack, atrack,dTrack, TadTrack,DmrTrack), groups = rep(c("unguided", "guided"), each = 4), type = c("a", "p") , groupAnnotation = "id",from = 95433599, to = 95579759)
+plotTracks(list(itrack, gtrack, atrack,dTrack, TadTrack,DmrTrack), groups = rep(c("unguided", "guided"), each = 4), type = c("a", "p") , from = 95433599, to = 95579759)
 
 # Add custom legend
 legendLabels = c("CLDN10 Iso-A", "Targeted CpG", "CLDN10 Iso-B")
