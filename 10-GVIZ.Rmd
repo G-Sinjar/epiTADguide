@@ -29,20 +29,19 @@ View(annotated_with_betas)
 
 
 # 1- create the gr_cpgs_AB Granges for ploting
-## 1a- filtering annotation table to get cldn10-AB CPGs infos:
+## 1a- filtering annotation table to get the most important columns:
 ```{r}
 library(dplyr)
 #region_of_interest <- [95433599,95579759]
 
-cpgs_AB <- annotated_with_betas %>%   
-  filter(chr == "chr13" & pos >= 95433599 & pos <= 95579759) %>%
-  select(CpGs, chr, pos, strand, Islands_Name, Relation_to_Island, UCSC_RefGene_Group, 
-         UCSC_RefGene_Name, UCSC_RefGene_Accession, GencodeV41_Group, GencodeV41_Name, 
-         GencodeV41_Accession, tail(everything(), 8))
-
 # renaming the sample columns
-colnames(cpgs_AB)[(ncol(cpgs_AB)-7):ncol(cpgs_AB)] <- c("unguided_1", "guided_1", "unguided_2", "guided_2", 
-                                                         "unguided_3", "guided_3", "unguided_4", "guided_4")
+colnames(annotated_with_betas)[(ncol(annotated_with_betas)-7):ncol(annotated_with_betas)] <- c("unguided_1", "guided_1", "unguided_2", "guided_2", "unguided_3", "guided_3", "unguided_4", "guided_4")
+
+View(annotated_with_betas)
+
+# choosing the important columns
+cpgs_AB <- annotated_with_betas %>% select(CpGs, chr, pos, strand, Islands_Name, Relation_to_Island, UCSC_RefGene_Group, UCSC_RefGene_Name, UCSC_RefGene_Accession, GencodeV41_Group, GencodeV41_Name, GencodeV41_Accession, unguided_1, guided_1, unguided_2, guided_2, unguided_3, guided_3, unguided_4, guided_4)
+
 
 View(cpgs_AB) # 71 cpgs 13
 ```
@@ -65,23 +64,33 @@ cpgs_AB <- cpgs_AB %>%
          unguided_1, unguided_2, unguided_3, unguided_4,  
          guided_1, guided_2, guided_3, guided_4)   
 
+# ##### please replace the GeneType from the beginning in the dmp pipeline
+cpgs_AB$GenType <- gsub("CLDN10 Iso-A", "CLDN10_IsoA", cpgs_AB$GenType)
+cpgs_AB$GenType <- gsub("Targeted CpG", "Targeted_CpG", cpgs_AB$GenType)
+cpgs_AB$GenType <- gsub("CLDN10 Iso-B", "CLDN10_IsoB", cpgs_AB$GenType)
+
+
 View(cpgs_AB)
+```
+## 1c- save table to create the granges
+```{r}
+cpgs_AB_rownames <- cbind(CpGs = rownames(cpgs_AB), cpgs_AB) # check the rownames(cpgs_AB) when you excute this again. the row names werent the cpgs but just numbers 
+writexl::write_xlsx(cpgs_AB_rownames, "./Output/10-cpgs_for_Granges.xlsx", col_names = TRUE)
 
-
-# save table to create the granges
-cpgs_AB_rownames <- cbind(CpGs = rownames(cpgs_AB), cpgs_AB)
-writexl::write_xlsx(cpgs_AB_rownames, "./Output/10-cpgs-AB_for_Granges.xlsx", col_names = TRUE)
+#get the table
+cpgs_AB <- read_excel("./Output/10-cpgs_for_Granges.xlsx",col_names = TRUE)
+View(cpgs_AB)
 ```
 
 ## 1c- convert to genomicRanges
 ```{r}
 library(GenomicRanges)
 gr_cpgs_AB <- GRanges(seqnames = cpgs_AB$chr,
-              ranges = IRanges(start = cpgs_AB$pos, end = cpgs_AB$pos))#,strand = cpgs_AB$strand)
+              ranges = IRanges(start = cpgs_AB$pos, end = cpgs_AB$pos)) #,strand = cpgs_AB$strand)
 
 # Add the remaining columns as metadata to the GenomicRanges object
 mcols(gr_cpgs_AB) <- cpgs_AB[, 4:ncol(cpgs_AB)]
-gr_cpgs_AB
+head(gr_cpgs_AB)
 ```
 
 
@@ -94,27 +103,35 @@ gr_cpgs_AB
 ```{r}
 library(Gviz)
 
-gen <- "hg38"
-chr <- as.character(unique(seqnames(gr_cpgs_AB)))
+from <- 95433599
+to <- 95579759
+genome <- "hg38"
+chr <- "chr13"
 
-itrack <- IdeogramTrack(genome = gen, chromosome = chr )
+itrack <- IdeogramTrack(genome = genome, chromosome = chr)
 gtrack <- GenomeAxisTrack()
 
+plotTracks(list(itrack,gtrack), showBandId = TRUE, cex.bands = 0.5,from = from, to = to)
+```
 
-
+##### please replace the GenType from the beginneing in the dmp pipeline
+## 1b CpGs track
+```{r}
 # Define the colors for GenType
-fill_colors <- c("CLDN10 Iso-A" = "blue", "Targeted CpG" = "red", "CLDN10 Iso-B" = "green")
+#fill_colors <- c("Other"= "lightblue" ,"CLDN10_IsoA" = "blue", "Targeted_CpG" = "red", "CLDN10_IsoB" = "green")
+
 
 # Create AnnotationTrack with CpGs
-atrack <- AnnotationTrack(gr_cpgs_AB, 
+atrack <- AnnotationTrack(gr_cpgs_AB, chromosome = chr,
                           name = "CpGs", 
-                          col = NA,       # Border color
-                          fill = fill_colors[gr_cpgs_AB$GenType], 
+                          col = "NA",       # Border color
+                          #fill = fill_colors[gr_cpgs_AB$GenType], 
                           id = gr_cpgs_AB$CpGs,
                           feature = gr_cpgs_AB$GenType)  
+#plotTracks(atrack, from= from, to = to, "Other"= "lightblue", "CLDN10_IsoA" = "blue", "Targeted_CpG" = "red", "CLDN10_IsoB" = "green")
 
 # Create the plot
-plotTracks(list(itrack, gtrack, atrack), groupAnnotation = "id")
+plotTracks(list(itrack, gtrack, atrack), from = from, to = to, showBandId = TRUE,cex.bands = 0.5, "Other"= "lightblue", "CLDN10_IsoA" = "blue", "Targeted_CpG" = "red", "CLDN10_IsoB" = "green")
 ```
 ## 1b -try sequence track when you zoom in
 ```{r}
@@ -184,23 +201,22 @@ gr
 ```
 
 
-## 1c - beta values pointplot track
+## 1c -beta values pointplot track
 ```{r}
 # the strand has to be unique here
 #data = must be a data matrix
-
 # Select the last 8 columns dynamically
 last_8_data <- cpgs_AB[, (ncol(cpgs_AB) - 7):ncol(cpgs_AB)]
 
-dTrack <- DataTrack(gr_cpgs_AB, 
+dTrack <- DataTrack(gr_cpgs_AB, chromosome = chr,
                     name = "CpGs Beta values",
                     data = last_8_data)
  
 plotTracks(dTrack, groups = rep(c("unguided", "guided"), each = 4),
-           type = c("a", "p"))
+           type = c("a", "p"), from = from , to = to)
 ```
 
-## 1d - pvalue
+## 1d -pvalue
 ```{r}
 pvalTrack <- DataTrack(gr_cpgs_AB, 
                     name = "p-values",
@@ -225,8 +241,8 @@ DMRs <- DMRs %>%
 
 # create a granges of the DMRs 
 gr_Dmrs <- GRanges(
-  seqnames = DMRs$chr,  # Corrected
-  ranges = IRanges(start = DMRs$start, end = DMRs$end)  # Removed unnecessary width
+  seqnames = DMRs$chr,  
+  ranges = IRanges(start = DMRs$start, end = DMRs$end)
 )
 
 # Add metadata (p-value)
@@ -236,7 +252,7 @@ gr_Dmrs
 ```
 ### create track
 ```{R}
-DmrTrack <- AnnotationTrack(gr_Dmrs, name = "DMRs", col = "pink", fill = "pink",feature = paste("P.val =", round(gr_Dmrs$p.value, 5)))
+DmrTrack <- AnnotationTrack(gr_Dmrs, chromosome = chr, name = "DMRs", col = "pink", fill = "pink",feature = paste("P.val =", round(gr_Dmrs$p.value, 5)))
 
 plotTracks(DmrTrack,from = 95433599, to = 95579759, groupAnnotation= "feature")
 ```
@@ -280,16 +296,56 @@ plotTracks(TadTrack,groupAnnotation = "feature", from = 95433599, to = 95579759)
 ## 1G CPG Islands track
 ```{r}
 
+
+
+
+
+# Convert to AnnotationTrack
+cpgTrack <- AnnotationTrack(
+  genome = gen,
+  name = "CpG Islands",
+  fill = "darkgreen"
+)
+
 ```
 
 
 ## 1H Gene track
 
+```{r}
+# you can get a TxDb object from any GFF  file easily 
+#BiocManager::install("TxDb.Hsapiens.UCSC.hg38.knownGene")
+library(TxDb.Hsapiens.UCSC.hg38.knownGene)
+
+TxDb <-  TxDb.Hsapiens.UCSC.hg38.knownGene
+TxDb
+#head(feature(GeneTrack))
+
+# ploting
+GeneTrack <- GeneRegionTrack(TxDb, chromosome = chr, name = "Gene Annotation")
+
+plotTracks(GeneTrack, from = 95433599, to = 95579759, transcriptAnnotation = "gene")
+```
+### from ENsDb --> didnt work
+```{r}
+BiocManager::install("EnsDb.Hsapiens.v86")  # Ensembl 86 (GRCh38)
+library(ensembldb)
+library(EnsDb.Hsapiens.v86)
+
+edb <-  EnsDb.Hsapiens.v86
+seqlevelsStyle(edb) <- "UCSC"
+
+eTrack <- GeneRegionTrack(edb, chromosome = chr, start = 95433599, end = 95579759,
+                          name = "GeneEns",ucscChromosomeNames=FALSE)
+plotTracks(eTrack, transcriptAnnotation = "gene")
+```
+
+
 ## 1 - Plot all tracks together
 ```{r}
 #library(grid)
 
-plotTracks(list(itrack, gtrack, atrack,dTrack, TadTrack,DmrTrack), groups = rep(c("unguided", "guided"), each = 4), type = c("a", "p") , from = 95433599, to = 95579759)
+plotTracks(list(itrack, gtrack, atrack,dTrack, GeneTrack,IslandTrack, DmrTrack, TadTrack), groups = rep(c("unguided", "guided"), each = 4), type = c("a", "p") , transcriptAnnotation = "symbol",from = 95433599, to = 95579759)
 
 # Add custom legend
 legendLabels = c("CLDN10 Iso-A", "Targeted CpG", "CLDN10 Iso-B")
@@ -322,8 +378,8 @@ dev.off()
 
 
 # as a PDF file
-pdf("./Plots/GVIZ_CLDN10_AB_5.pdf", width = 20, height = 11)  # dimensions in inches
-plotTracks(list(itrack, gtrack, atrack,dTrack, TadTrack,DmrTrack), groups = rep(c("unguided", "guided"), each = 4), type = c("a", "p") , groupAnnotation = "id",from = 95433599, to = 95579759)
+pdf("./Plots/GVIZ_CLDN10_AB_6.pdf", width = 20, height = 11)  # dimensions in inches
+plotTracks(list(itrack, gtrack, atrack,dTrack, GeneTrack,DmrTrack, TadTrack), groups = rep(c("unguided", "guided"), each = 4), type = c("a", "p") , transcriptAnnotation = "symbol",from = 95433599, to = 95579759)
 
 # Add custom legend
 legendLabels = c("CLDN10 Iso-A", "Targeted CpG", "CLDN10 Iso-B")
