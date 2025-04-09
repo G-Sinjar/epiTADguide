@@ -133,7 +133,7 @@ View(dmrs2$table)
 ```
 
 
-# DMRs with cutoff = 0.15, B=100
+# DMRs with cutoff=0.15,   B=100   smooth = TRUE
 ```{r}
 library(doParallel)
 registerDoParallel(cores = 6)

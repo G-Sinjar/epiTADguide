@@ -1,0 +1,195 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+
+```{r}
+plot(cars)
+```
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
+
+
+
+
+
+# get 6 tables of the 6 offspoter txt results
+```{r}
+library(readr)
+
+# Function to read guide files and assign custom column names
+read_guide_files <- function(file_path, num_guides) {
+  # Define column names
+  col_names <- c("Chrom", "Strand", "Start", "End", "Given query", "Actual genomic hit", 
+                 "Number of mismatches", "Pre-mRNA (Unspliced)", "mRNA (5UTR)", 
+                 "mRNA (CDS)", "mRAN (3UTR)", "lincRNA (Unspliced)", 
+                 "lincRNA (Spliced)", "guide")
+  
+  # Loop through all guide files (from guide1.txt to guideN.txt)
+  for (i in 1:num_guides) {
+    # Construct the file path for each guide
+    guide_file <- paste0(file_path, "/guide", i, ".txt")
+    
+    # Read each guide file
+    guide_data <- read_delim(guide_file, delim = "\t", col_names = FALSE, show_col_types = FALSE)
+    
+    # Assign custom column names
+    colnames(guide_data) <- col_names
+    
+    # Add a new column to indicate which guide it is
+    guide_data$guide <- paste0("guide", i)
+    
+     # Add new columns: Start + 70 and End - 70
+    guide_data$Start_minus_70 <- guide_data$Start - 70
+    guide_data$End_plus_70 <- guide_data$End + 70
+    
+    # Assign the data to a variable with dynamic names
+    assign(paste0("guide", i), guide_data, envir = .GlobalEnv)
+  }
+}
+
+# try functionin 
+# Path to the offspotter result folder
+offspoter_result_path <- "C:/Users/ghaza/Documents/ghazal/Bioinformatik_Fächer/Masterarbeit_Project/Results/offspotter_results"
+
+# Ask the user for the number of guides
+num_guides <- 6
+
+# Run the function to read and assign data to guide1, guide2, ..., guideN
+read_guide_files(offspoter_result_path, num_guides)
+
+head(guide3)
+View(guide2)
+```
+
+# or combined offspotter results
+```{r}
+library(dplyr)
+library(readxl)
+library(readr)
+
+read_guide_files <- function(file_path, num_guides) {
+  # Define column names
+  col_names <- c("Chrom", "Strand", "Start", "End", "Given query", "Actual genomic hit", 
+                 "Number of mismatches", "Pre-mRNA (Unspliced)", "mRNA (5UTR)", 
+                 "mRNA (CDS)", "mRAN (3UTR)", "lincRNA (Unspliced)", 
+                 "lincRNA (Spliced)", "guide")
+  
+  # Initialize an empty list to store all guide data
+  all_guides <- list()
+  
+  # Loop through all guide files (from guide1.txt to guideN.txt)
+  for (i in 1:num_guides) {
+    # Construct the file path for each guide
+    guide_file <- paste0(file_path, "/guide", i, ".txt")
+    
+    # Read each guide file
+    guide_data <- read_delim(guide_file, delim = "\t", col_names = FALSE, show_col_types = FALSE)
+    
+    # Assign custom column names
+    colnames(guide_data) <- col_names
+    
+    # Add a new column to indicate which guide it is
+    guide_data$guide <- paste0("guide", i)
+    
+    # Add new columns: Start - 70 and End + 70
+    guide_data$Start_minus_70 <- guide_data$Start - 70
+    guide_data$End_plus_70 <- guide_data$End + 70
+    
+    # Append the current guide data to the list
+    all_guides[[i]] <- guide_data
+  }
+  
+  # Combine all guide tables into one large data frame
+  combined_guides <- bind_rows(all_guides)
+  
+  return(combined_guides)
+}
+
+# Path to the offspotter result folder
+offspoter_result_path <- "C:/Users/ghaza/Documents/ghazal/Bioinformatik_Fächer/Masterarbeit_Project/Results/offspotter_results"
+
+# Read in all the guides (assuming 6 guides)
+num_guides <- 6
+combined_Offspotter_guides <- read_guide_files(offspoter_result_path, num_guides)
+
+View(combined_Offspotter_guides)
+```
+
+# ist DMR2-chr7 near offtarget? -->case2 --> no
+```{r}
+library(readxl)
+
+#tad_df <- read_excel("C:/Users/ghaza/Documents/ghazal/Bioinformatik_Fächer/Masterarbeit_Project/Results/TAD results/TAD_data_with_header.xlsx", skip =2)
+#View(tad_df)
+
+dmrs_df <- read_excel("C:/Users/ghaza/Documents/ghazal/Bioinformatik_Fächer/Masterarbeit_Project/Scripts/R_Scripts/Output/8-DMRs_0.01_smooth.xlsx")
+View(dmrs_df)
+
+
+DMR2_start <- dmrs_df$start[2]
+DMR2_chr <- dmrs_df$chr[2]
+
+# Check if DMR2_chr is in the combined guide table and if DMR2_start is within the range
+matching_guide <- combined_Offspotter_guides %>%
+  filter(Chrom == 7 & DMR2_start >= Start_minus_70 & DMR2_start <= End_plus_70)
+
+# If there is a matching guide, display it
+if (nrow(matching_guide) > 0) {
+  print("Matching guide found:")
+  print(matching_guide)
+} else {
+  print("No matching offtarget found.")
+}
+# result: "No matching guide found."
+```
+
+# ist DMR2-chr7 in a tad where an offtarget is? -> case3
+```{r}
+# get tads on chr7
+#see in which tad is dmr2
+# see if there is an offtarget in the tad
+
+
+```
+
+# DMR3 --> try to create case 2 
+```{r}
+# cpgs on the chr6 checken --> may be many near DMR3
+DMR3_chr <- dmrs_df$chr[3]
+DMR3_start <- dmrs_df$start[3]
+DMR3_start
+DMR3_end <- dmrs_df$end[3]
+
+
+chr6_cpgs <- (cpgs[cpgs$chr == "chr6", ])
+
+cpgs_indmr3 <- chr6_cpgs[chr6_cpgs$pos >= DMR3_start & chr6_cpgs$pos <= DMR3_end, ]
+View(cpgs_indmr3) # alot of cpgs in the near may be can be manipulated
+
+# check if near offtarget
+matching_offtarget_dmr3 <- combined_Offspotter_guides %>%
+  filter(Chrom == 6 & DMR3_start >= Start_minus_70 & DMR3_start <= End_plus_70)
+if (nrow(matching_offtarget_dmr3) > 0) {
+  print("Matching guide found:")
+  print(matching_offtarget_dmr3)
+} else {
+  print("No matching offtarget found.")
+}
+# No matching offtarget found. -->cpgs_indmr3 is not near any Off-target
+
+
+# check all offtargets on chr6
+# choose an offtarget to manipulate the cpgs near it
+chr6_offtargets <- combined_Offspotter_guides[combined_Offspotter_guides$Chrom== 6,]
+View(chr6_offtargets) # is there an off target near the cpgs_indmr3 out the -70,+70 but near?
+```
+
