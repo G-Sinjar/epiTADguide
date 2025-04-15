@@ -19,8 +19,14 @@ The preview shows you a rendered HTML copy of the contents of the editor. Conseq
 
 
 ############ script ################
-
-# 1- create the gr_cpgs_AB Granges for ploting
+# libraries
+```{r}
+library(readxl)
+library(dplyr)
+library(GenomicRanges)
+library(Gviz)
+```
+# create the gr_cpgs_AB Granges for ploting -> not sinvoll just AB region
 ## 1a get Annotation table
 ```{r}
 library(readxl)
@@ -78,16 +84,16 @@ writexl::write_xlsx(cpgs_AB_rownames, "./Output/10-cpgs_for_Granges.xlsx", col_n
 
 
 
-# get the final table for 
+
+# create grange for all cpgs
+## a- get the final table for cpgs
 ```{r}
-library(readxl)
 cpgs <- read_excel("./Output/10-cpgs_for_Granges.xlsx",col_names = TRUE)
-View(cpgs)
+#View(cpgs)
 ```
 
-## 1c- convert to genomicRanges
+## b- convert to genomicRanges
 ```{r}
-library(GenomicRanges)
 gr_cpgs <- GRanges(seqnames = cpgs$chr,
               ranges = IRanges(start = cpgs$pos, end = cpgs$pos)) #,strand = cpgs_AB$strand)
 
@@ -100,8 +106,6 @@ gr_cpgs
 # 1  GVIZ plot of the whole Iso A + B
 ## 1a -first 2 tracks (Ideogram, GenomicAxis)
 ```{r}
-library(Gviz)
-
 from <- 95433599
 to <- 95579759
 genome <- "hg38"
@@ -113,22 +117,23 @@ gtrack <- GenomeAxisTrack()
 plotTracks(list(itrack,gtrack), showBandId = TRUE, cex.bands = 0.7,from = from, to = to)
 ```
 
-##### please replace the GenType from the beginneing in the dmp pipeline
+
 ## 1b -CpGs track
 ```{r}
+##### please replace the GenType from the beginneing in the dmp pipeline
 # Define the colors for GenType
 #fill_colors <- c("Other"= "lightblue" ,"CLDN10_IsoA" = "blue", "Targeted_CpG" = "red", "CLDN10_IsoB" = "green")
 
 
 # Create AnnotationTrack with CpGs
-atrack <- AnnotationTrack(gr_cpgs, chromosome = chr, name = "CpGs", 
+sondentrack <- AnnotationTrack(gr_cpgs, chromosome = chr, name = "CpG Probes", 
                           col = NA,       # Border color
                           #fill = fill_colors[gr_cpgs_AB$GenType], 
                           id = gr_cpgs$CpGs,
                           feature = gr_cpgs$GenType)  
 
 # Create the plot
-plotTracks(list(itrack, gtrack, atrack), from = from, to = to, showBandId = TRUE,cex.bands = 0.5, "Other"= "lightblue", "CLDN10_IsoA" = "blue", "Targeted_CpG" = "red", "CLDN10_IsoB" = "green",stacking = "dense")
+plotTracks(list(itrack, gtrack, sondentrack), from = from, to = to, showBandId = TRUE,cex.bands = 0.7, "Other"= "lightblue", "CLDN10_IsoA" = "blue", "Targeted_CpG" = "red", "CLDN10_IsoB" = "green",stacking = "dense")
 ```
 
 ## 1b -try sequence track when you zoom in
@@ -206,12 +211,12 @@ gr
 # Select the last 8 columns dynamically
 last_8_data <- cpgs[, (ncol(cpgs) - 7):ncol(cpgs)]
 
-dTrack <- DataTrack(gr_cpgs, chromosome = chr,
-                    name = "CpGs Beta values",
+betaTrack <- DataTrack(gr_cpgs, chromosome = chr,
+                    name = "Beta values",
                     data = last_8_data)
  
-plotTracks(dTrack, groups = rep(c("unguided", "guided"), each = 4),
-           type = c("a", "p"), from = from , to = to, aggregateGroups = TRUE, aggregation = "mean")
+plotTracks(betaTrack, groups = rep(c("unguided", "guided"), each = 4),
+           type = c("a", "p"), from = from , to = to, aggregateGroups = TRUE, aggregation = "mean") # or wothout aggregate
 ```
 
 ## 1d -pvalue
@@ -223,13 +228,10 @@ plotTracks(pvalTrack, from = from , to = to)
 
 
 
-## 1E -DMR track
+## 1E DMR track
 ### create DMR Granges 
 ```{r}
-library(readxl)
-library(dplyr)
-
-#change the DMRnR FROM THE BEGINNING IN THE THE PIPELINE
+##### change the DMRnR FROM THE BEGINNING IN THE THE PIPELINE
 DMRs <- read_excel("./Output/8-DMRs_0.01_smooth.xlsx", col_names = TRUE)
 
 DMRs$DMR_Nr <- paste("DMR", DMRs$DMR_Nr, sep = "")
@@ -258,14 +260,13 @@ plotTracks(DmrTrack,from = from, to = to, groupAnnotation= "feature")
 ```
 
 
-## 1F -TAD Track
-### create TAD Granges
+## 1F -TAD Track CAKI2
+### caki2 10kb
 ```{r}
-library(readxl)
-library(dplyr)
+### caki2 create TAD Granges
 
-bin_size <- 10000
-tad_df <- read_excel("C:/Users/ghaza/Documents/ghazal/Bioinformatik_Fächer/Masterarbeit_Project/Results/TAD results/TAD_data_with_header.xlsx", skip =2)
+bin_size_10 <- 10000
+tad_df <- read_excel("C:\\Users\\ghaza\\Documents\\ghazal\\Bioinformatik_Fächer\\Masterarbeit_Project\\Scripts\\PythonProject\\TADs_CAKI2\\3_TADs_as_txt_and_Excel\\CAKI2_chr13_10000bp_TADs.xlsx", skip =2)
 #View(tad_df)
 
 
@@ -276,21 +277,106 @@ tad_df <- tad_df %>%
 
 # convert Tad_df to Granges 
 chr_TAD <- "chr13"
-gr_TADs <- GRanges(seqnames = chr_TAD,
+gr_TADs_10kb <- GRanges(seqnames = chr_TAD,
               ranges = IRanges(start = tad_df$StartPos, end = tad_df$EndPos))
-mcols(gr_TADs) <- tad_df[, 1]
-gr_TADs
-```
-### plot tad track
-```{r}
-#from = 95433599, to = 95579759
-TadTrack <- AnnotationTrack(gr_TADs, 
-                            name = "TADs-Skin", 
-                            feature = gr_TADs$TadNr,  
+mcols(gr_TADs_10kb) <- tad_df[, 1]
+gr_TADs_10kb
+
+### caki2 10kb plot tad track
+
+TadTrack_10kb <- AnnotationTrack(gr_TADs_10kb,
+                            name = paste0("TADs-Caki2-", bin_size_10), 
+                            feature = gr_TADs_10kb$TadNr,  
                             col = "black")
 
-plotTracks(TadTrack,groupAnnotation = "feature", from = from, to = to)
+
+plotTracks(TadTrack_10kb, groupAnnotation = "feature", from = from, to = to)
 ```
+
+### caki2 25kb 
+```{r}
+###create TAD Granges
+bin_size_25 <- 25000
+tad_df_25kb <- read_excel("C:\\Users\\ghaza\\Documents\\ghazal\\Bioinformatik_Fächer\\Masterarbeit_Project\\Scripts\\PythonProject\\TADs_CAKI2\\3_TADs_as_txt_and_Excel\\CAKI2_chr13_25000bp_TADs.xlsx", skip =2)
+
+# Convert columns to numeric
+tad_df_25kb <- tad_df_25kb %>%
+  mutate(across(c(StartPos, EndPos, TadLength), as.numeric))
+
+
+# convert Tad_df to Granges 
+chr_TAD <- "chr13"
+gr_TADs_25kb <- GRanges(seqnames = chr_TAD,
+              ranges = IRanges(start = tad_df_25kb$StartPos, end = tad_df_25kb$EndPos))
+mcols(gr_TADs_25kb) <- tad_df_25kb[, 1]
+gr_TADs_25kb
+
+### plot tad track
+TadTrack_25kb <- AnnotationTrack(gr_TADs_25kb, 
+                            name = paste0("TADs-Caki2-",bin_size_25), 
+                            feature = gr_TADs_25kb$TadNr,  
+                            col = "black")
+
+plotTracks(TadTrack_25kb,groupAnnotation = "feature", from = from, to = to)
+```
+
+
+## 1g -TAD Track SKIN
+### 10kb create TAD Granges
+```{r}
+bin_size_skin10 <- 10000
+tad_skin_10kb <- read_excel("C:/Users/ghaza/Documents/ghazal/Bioinformatik_Fächer/Masterarbeit_Project/Scripts/PythonProject/TADs_skin/3_TADs_as_txt_and_Excel/Skin_fibro_chr13_10000bp_TADs.xlsx", skip =2)
+
+
+# Convert columns to numeric
+tad_skin_10kb <- tad_skin_10kb %>%
+  mutate(across(c(StartPos, EndPos, TadLength), as.numeric))
+
+
+# convert Tad_df to Granges 
+chr_TAD <- "chr13"
+gr_tad_skin_10kb <- GRanges(seqnames = chr_TAD,
+              ranges = IRanges(start = tad_skin_10kb$StartPos, end = tad_skin_10kb$EndPos))
+mcols(gr_tad_skin_10kb) <- tad_skin_10kb[, 1]
+gr_tad_skin_10kb
+
+
+### plot tad track
+TadTrack_skin_10kb <- AnnotationTrack(gr_tad_skin_10kb, 
+                            name = paste0("TADs-Skin fibroblast-",bin_size_skin10), 
+                            feature = gr_tad_skin_10kb$TadNr,  
+                            col = "black")
+
+plotTracks(TadTrack_skin_10kb,groupAnnotation = "feature", from = from, to = to)
+```
+
+### 25kb create TAD Granges
+```{r}
+bin_size_skin25 <- 25000
+tad_skin_25kb <- read_excel("C:/Users/ghaza/Documents/ghazal/Bioinformatik_Fächer/Masterarbeit_Project/Scripts/PythonProject/TADs_skin/3_TADs_as_txt_and_Excel/Skin_fibro_chr13_25000bp_TADs.xlsx", skip =2)
+
+# Convert columns to numeric
+tad_skin_25kb <- tad_skin_25kb %>%
+  mutate(across(c(StartPos, EndPos, TadLength), as.numeric))
+
+
+# convert Tad_df to Granges 
+chr_TAD <- "chr13"
+gr_tad_skin_25kb  <- GRanges(seqnames = chr_TAD,
+              ranges = IRanges(start = tad_skin_25kb$StartPos, end = tad_skin_25kb$EndPos))
+mcols(gr_tad_skin_25kb) <- tad_skin_25kb[, 1]
+gr_tad_skin_25kb 
+
+
+### plot tad track
+TadTrack_skin_25kb <- AnnotationTrack(gr_tad_skin_25kb , 
+                            name = paste0("TADs-Skin fibroblast-",bin_size_25), 
+                            feature = gr_tad_skin_25kb$TadNr,  
+                            col = "black")
+
+plotTracks(TadTrack_skin_25kb,groupAnnotation = "feature", from = from, to = to)
+```
+
 
 
 ## 1G -CPG Islands track
@@ -346,8 +432,8 @@ plotTracks(cpgIslandTrack, from = from, to = to, groupAnnotation = "feature",jus
 library(TxDb.Hsapiens.UCSC.hg38.knownGene)
 
 TxDb <-  TxDb.Hsapiens.UCSC.hg38.knownGene
-TxDb
-unique(feature(GeneTrack))
+#TxDb
+#unique(feature(GeneTrack))
 
 # ploting
 ensTransTrack <- GeneRegionTrack(TxDb, chromosome = chr, name = "transcript", start = from, end = to, transcriptAnnotation = "transcript", just.group = "above")
@@ -429,7 +515,7 @@ plotTracks(geneTrack, from = from, to = to, featureAnnotation= "id", fontcolor.f
 
 
 
-### 1H.4 Get transcript ranges (as GRanges)
+### 1H.4 Get transcript ranges (as GRanges) --> not nice to see
 ```{r}
 transcript_tx_gr <- transcripts(edb)
 length(transcript_tx_gr) #  216741
@@ -474,14 +560,14 @@ plotTracks(transTrack, from = from, to = to, groupAnnotation= "id", just.group= 
 # Set groupAnnotation = "feature" ONLY on the track(s) where you want to see feature labels
 displayPars(DmrTrack) <- list(groupAnnotation = "feature")  
 displayPars(cpgIslandTrack) <- list(groupAnnotation = "feature") 
-displayPars(TadTrack) <- list(groupAnnotation = "feature") 
+displayPars(TadTrack_skin_25kb) <- list(groupAnnotation = "feature") 
 displayPars(atrack) <- list(stacking= "dense") 
 displayPars(geneTrack) <- list(featureAnnotation= "id",fontcolor.feature = "darkblue") 
 
 
 # Now plot without global groupAnnotation
 plotTracks(
-  list(itrack, gtrack, atrack, DmrTrack, cpgIslandTrack, dTrack,geneTrack,ensTransTrack, TadTrack),
+  list(itrack, gtrack, atrack, DmrTrack, cpgIslandTrack, dTrack,geneTrack,ensTransTrack,TadTrack_skin_25kb, TadTrack_25kb),
   from = from,
   to = to,
   showBandId = TRUE,
@@ -516,26 +602,27 @@ plotTracks(
 #dev.off() 
 
 # as a PDF file
-pdf("./Plots/GVIZ_CLDN10_AB_12.pdf", width = 27, height = 15)  # dimensions in inches
+pdf("./Plots/GVIZ_CLDN10_AB_13_tad25kb.pdf", width = 27, height = 15)  # dimensions in inches
+
 displayPars(DmrTrack) <- list(groupAnnotation = "feature")  
 displayPars(cpgIslandTrack) <- list(groupAnnotation = "feature") 
-displayPars(TadTrack) <- list(groupAnnotation = "feature") 
+displayPars(TadTrack_skin_25kb) <- list(groupAnnotation = "feature") 
 displayPars(atrack) <- list(stacking= "dense") 
 displayPars(geneTrack) <- list(featureAnnotation= "id",fontcolor.feature = "darkblue") 
 
 
 # Now plot without global groupAnnotation
 plotTracks(
-  list(itrack, gtrack, atrack, DmrTrack, cpgIslandTrack, dTrack,geneTrack,ensTransTrack, TadTrack),
+  list(itrack, gtrack, atrack, DmrTrack, cpgIslandTrack, dTrack,geneTrack,ensTransTrack,TadTrack_skin_25kb, TadTrack_25kb),
   from = from,
   to = to,
   showBandId = TRUE,
-  cex.bands = 0.9,
+  cex.bands = 0.7,
   groups = rep(c("unguided", "guided"), each = 4),
   type = c("a", "p"),
   transcriptAnnotation = "transcript",
-  cex.group = 1,
-  cex.legend = 1,
+  cex.group = 0.9,
+  cex.legend = 0.9,
   "Other" = "lightblue",
   "CLDN10_IsoA" = "blue",
   "Targeted_CpG" = "red",
