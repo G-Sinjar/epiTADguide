@@ -429,7 +429,7 @@ plotTracks(cpgIslandTrack, from = from, to = to, groupAnnotation = "feature",jus
 ```{r}
 # you can get a TxDb object from any GFF  file easily 
 #BiocManager::install("TxDb.Hsapiens.UCSC.hg38.knownGene")
-library(TxDb.Hsapiens.UCSC.hg38.knownGene)
+library(TxDb.Hsapiens.UCSC.hg38.knownGene) #--> anstatt knownGene -> refGene
 
 TxDb <-  TxDb.Hsapiens.UCSC.hg38.knownGene
 #TxDb
