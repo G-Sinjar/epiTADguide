@@ -142,8 +142,6 @@ dmrs_0.01_smooth <- bumphunter(ratio_geno_Swan_0.01_NoSNP, design = designMatrix
 # 16 DMRs 
 ```
 
-
-
 # Editing the DMR table
 ```{r}
 DMRtable <- dmrs_0.01_smooth$table
@@ -176,9 +174,6 @@ missimg_cpgs <- dmrs_smooth[dmrs_smooth$start %in% c(76422394, 80002882, 1590945
 View(missimg_cpgs)
 ```
 
-
-
-
 # save/ get DMR table
 ```{r}
 writexl::write_xlsx(dmrs_0.01_smooth, "./Output/DMRs_0.01_smooth.xlsx")
@@ -192,8 +187,8 @@ View(dmrs_smooth)
 
 
 
-############### 1. DMRs no smoothing ########################
-# 1 Bind with cpgs DMR2 
+# 1. DMRs no smoothing ########################
+## 1 Bind with cpgs DMR2 
 ```{r}
 # Binding to annotation table to get cpgs infos:
 cpgs_DMR2_chr13 <- annotated_with_betas_df[annotated_with_betas_df$chr == "chr13" & 
@@ -202,7 +197,7 @@ cpgs_DMR2_chr13 <- annotated_with_betas_df[annotated_with_betas_df$chr == "chr13
 View(cpgs_DMR2_chr13)
 ```
 
-# 1 creating a table ready for boxplots of all cpgs in one DMR
+## 1 creating a table ready for boxplots of all cpgs in one DMR
 ```{r}
 library(dplyr)
 library(tidyr)
@@ -236,7 +231,7 @@ View(beta_long)
 ```
 
 
-# 1 Boxplots of cpgs in one DMR
+## 1 Boxplots of cpgs in one DMR
 ```{r}
 # Basic Boxplot with Dotted Lines from Whiskers to Outliers
 p <- ggplot(beta_long, aes(x = factor(PositionLabel), y = BetaValue, fill = Group)) +
@@ -262,8 +257,9 @@ saveWidget(interactive_plot, "interactive_boxplot_DMR2.html")
 
 
 
-############## 2. DMRs with smoothing ########################
-# 2 bind to cpps DMR1 smooth
+
+# 2. DMRs with smoothing ########################
+## 2 bind to cpps DMR1 smooth
 ```{r}
 # Binding to annotation table to get cpgs infos:
 cpgs_DMR1 <- annotation_0.01_df[annotation_0.01_df$chr == "chr13" & 
@@ -273,7 +269,7 @@ View(cpgs_DMR1)
 ```
 
 
-# 2 get dmp table
+## 2 get dmp table
 ```{r}
 View(dmp)
 
@@ -292,15 +288,15 @@ dim(filtered0.05_dmp) #40541     6
 ############### bullshit
 
 #bumphunter
-
+## End Test ---> DIDNT WORK
 ```
-### End Test ---> DIDNT WORK
 
 
 
 
 
-# 2 Add columns (pval, beta and M differnces) to the cpgs_DMR1 
+
+## 3 Add columns (pval, beta and M differnces) to the cpgs_DMR1 
 ```{r}
 # 1. get-pvalue from dmp table
 cpgs_DMR1_pval <- dmp[rownames(cpgs_DMR1), ]
@@ -316,7 +312,8 @@ cpgs_DMR1$M_Difference <- cpgs_DMR1_pval$M_difference
 View(cpgs_DMR1)
 ```
 
-## create a table for boxplot of cpgs in one DMR1  
+# DMR1
+## a-create a table for boxplot of cpgs in one DMR1  
 ```{r}
 # create the box plot table
 library(dplyr)
@@ -330,7 +327,7 @@ writexl::write_xlsx(cpgs_DMR1_for_boxplot, "./Output/cpgs_in_DMR1_forBoxplots.xl
 ```
 
 
-# 2 creating a long format table ready for boxplots of all cpgs in one DMR
+## b-  creating a long format table ready for boxplots of all cpgs in one DMR
 ```{r}
 library(tidyr)
 

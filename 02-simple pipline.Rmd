@@ -370,24 +370,3 @@ CpGs_CLDN10 <- read_excel("./Output/CpGs_of_CLDN10.xlsx", col_names = TRUE)
 ratio_geno_Swan_0.01_NoSNP_Beta_df <- read.excel("./Output/2-Beta_values_SWAN_0.01", col_names= TRUE)
 M_values_0.01_df <- read_excel("./Output/3-M_values_SWAN_0.01.xlsx", col_names = TRUE)
 ```
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-################# ab hier sieh die andere verkurzere versionen #################
-
-
-
-# Granges

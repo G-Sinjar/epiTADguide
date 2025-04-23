@@ -23,7 +23,6 @@ library(dplyr)
 library(readxl)
 library(readr)
 library(GenomeInfoDb)
-
 ```
 
 # get 6 tables in R of the 6 offspoter txt results
@@ -81,7 +80,7 @@ View(guide2)
 read_guide_files <- function(file_path, num_guides) {
   # Define column names
   col_names <- c("Chrom", "Strand", "Start", "End", "Given query", "Actual genomic hit", 
-                 "Number of mismatches", "Pre-mRNA (Unspliced)", "mRNA (5UTR)", 
+                 "Number_of_mismatches", "Pre-mRNA (Unspliced)", "mRNA (5UTR)", 
                  "mRNA (CDS)", "mRAN (3UTR)", "lincRNA (Unspliced)", 
                  "lincRNA (Spliced)", "guide")
   
@@ -113,7 +112,10 @@ read_guide_files <- function(file_path, num_guides) {
   # Combine all guide tables into one large data frame
   combined_guides <- bind_rows(all_guides)
   
-  return(combined_guides)
+  just_offtargets <- combined_guides %>%
+    filter(`Number_of_mismatches` !=  0)
+  
+  return(just_offtargets)
 }
 
 # Path to the offspotter result folder
@@ -121,23 +123,28 @@ offspoter_result_path <- "C:/Users/ghaza/Documents/ghazal/Bioinformatik_Fächer/
 
 # Read in all the guides (assuming 6 guides)
 num_guides <- 6
-combined_Offspotter_guides <- read_guide_files(offspoter_result_path, num_guides)
+combined_Offspotter_guideResults <- read_guide_files(offspoter_result_path, num_guides)
 
-View(combined_Offspotter_guides)
+View(combined_Offspotter_guideResults)
+```
+
+
 
 # convert to a GRange
+```{r}
 # Create the GRanges object and keep all the extra columns as metadata
 gr_offtargets <- GRanges(
-  seqnames = combined_Offspotter_guides$Chrom,
+  seqnames = combined_Offspotter_guideResults$Chrom,
   ranges = IRanges(
-    start = combined_Offspotter_guides$Start_minus_70,
-    end = combined_Offspotter_guides$End_plus_70
+    start = combined_Offspotter_guideResults$Start_minus_70,
+    end = combined_Offspotter_guideResults$End_plus_70
   ),
-  strand = combined_Offspotter_guides$Strand,
+  #strand = combined_Offspotter_guideResults$Strand,
   # Add all other columns as metadata
-  mcols = combined_Offspotter_guides[, !(colnames(combined_Offspotter_guides) %in% c("Chrom", "Strand", "Start_minus_70", "End_plus_70"))]
+  mcols = combined_Offspotter_guideResults[, !(colnames(combined_Offspotter_guideResults) %in% c("Chrom", "Strand", "Start_minus_70", "End_plus_70"))]
 )
 seqlevelsStyle(gr_offtargets) <- "UCSC"
+gr_offtargets
 ```
 
 # is DMR2-chr7 near offtarget? --> case2 --> no

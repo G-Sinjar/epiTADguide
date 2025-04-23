@@ -19,8 +19,8 @@ The preview shows you a rendered HTML copy of the contents of the editor. Conseq
 
 
 
-
-# reading both table
+# add tad columns into DMR table
+## reading both table
 ```{r}
 library(readxl)
 
@@ -31,7 +31,7 @@ View(tad_df)
 View(dmrs_df)
 ```
 
-# create a table
+## create a table
 ```{r}
 dmrsInTads <- dmrs_df[, c("DMR_Nr", "chr", "start", "end", "length", "value", "L", "p.value")]
 
@@ -86,7 +86,7 @@ for (i in 1:nrow(dmrsInTads)) {
 View(dmrsInTads)
 ```
 
-# save / retreave
+## save / retreave
 ```{r}
 dmrsInTads_with_rownames <- cbind(CpGs = rownames(dmrsInTads), dmrsInTads)
 writexl::write_xlsx(dmrsInTads_with_rownames, "./Output/9-DMRs_inTADs.xlsx")
@@ -95,3 +95,4 @@ writexl::write_xlsx(dmrsInTads_with_rownames, "./Output/9-DMRs_inTADs.xlsx")
 library(readxl)
 dmrsInTads <- read_excel("./Output/9-DMRs_inTADs.xlsx", col_names = TRUE)
 ```
+
