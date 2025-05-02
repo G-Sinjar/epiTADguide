@@ -26,6 +26,8 @@ library(dplyr)
 library(GenomicRanges)
 library(Gviz)
 library(shiny)
+library(EnsDb.Hsapiens.v86)
+library(GenomeInfoDb)
 ```
 
 # defaults
@@ -51,13 +53,13 @@ plotTracks(list(itrack,gtrack), showBandId = TRUE, cex.bands = 0.7,from = from, 
 ```{r}
 # a- get the final table for all cpgs
 cpgs <- read_excel("./Output/10-cpgs_for_Granges.xlsx",col_names = TRUE)
-View(cpgs)
+#dim(cpgs)
 
 # b- convert to genomicRanges
 gr_cpgs <- GRanges(seqnames = cpgs$chr,
               ranges = IRanges(start = cpgs$pos, end = cpgs$pos)) #,strand = cpgs_AB$strand)
 mcols(gr_cpgs) <- cpgs[, 4:ncol(cpgs)]
-gr_cpgs
+#gr_cpgs
 
 
 ##### please replace the GenType from the beginneing in the dmp pipeline
@@ -73,6 +75,102 @@ sondentrack <- AnnotationTrack(gr_cpgs, chromosome = chr, genome = genome , name
 
 # Create the plot
 #plotTracks(list(itrack, gtrack, sondentrack), from = from, to = to, showBandId = TRUE,cex.bands = 0.7, "Other"= "lightblue", "CLDN10_IsoA" = "blue", "Targeted_CpG" = "red", "CLDN10_IsoB" = "green",stacking = "dense")
+```
+
+## 1G -CPG Islands track
+```{r}
+# GRanges of CpGIslands
+
+#library(AnnotationHub) #dont work-> all on it are hg19
+
+# download cpgislands from ucsc
+url <- "http://hgdownload.cse.ucsc.edu/goldenpath/hg38/database/cpgIslandExt.txt.gz"
+destfile <- "cpgIslandExt_hg38.txt.gz"
+
+if (!file.exists(destfile)) {
+  download.file(url, destfile)
+  message("File downloaded.")
+} else {
+  message("cpgIslandExt_hg38.txt.gz File already exists. Skipping download.")
+}
+ #701 KB
+
+# Read the file (it's gzipped, so use gzfile)
+cpg_Islands <- read.table(gzfile(destfile), header = FALSE, sep = "\t", stringsAsFactors = FALSE)
+
+colnames(cpg_Islands) <- c("bin", "chrom","chromStart","chromEnd","name","length","cpgNum","gcNum","perCpg","perGc", "obsExp")
+#View(cpg_Islands)
+
+#Note: all start coordinates in our database are 0-based, not 1-based. 
+
+# convert to GRanges
+gr_cpgIslands <- GRanges(
+  seqnames = cpg_Islands$chrom,   
+  ranges = IRanges(
+    start = cpg_Islands$chromStart + 1,  # Convert from 0-based to 1-based
+    end = cpg_Islands$chromEnd))
+
+mcols(gr_cpgIslands) <- cbind(
+  feature = cpg_Islands$name,
+  cpg_Islands[, 7:ncol(cpg_Islands)]
+)
+#gr_cpgIslands
+
+# make AnnotationTrack
+cpgIslandTrack <- AnnotationTrack(gr_cpgIslands,
+  chromosome = chr,
+  genome = genome,
+  name = "CpG Islands",
+  feature = mcols(gr_cpgIslands)$feature,
+  fill = "darkgreen")
+
+#plotTracks(cpgIslandTrack, from = from, to = to, groupAnnotation = "feature",just.group = "right")
+```
+
+
+
+## 1E -DMR track
+```{r}
+##### change the DMRnR FROM THE BEGINNING IN THE THE PIPELINE
+DMRs <- read_excel("./Output/8-DMRs_0.01_smooth.xlsx", col_names = TRUE)
+
+DMRs$DMR_Nr <- paste("DMR", DMRs$DMR_Nr, sep = "")
+
+#View(DMRs)
+
+# check if all numbers are numeric
+DMRs <- DMRs %>%
+  mutate(across(c(start, end, length, p.value), as.numeric))
+
+# create a granges of the DMRs 
+gr_Dmrs <- GRanges(
+  seqnames = DMRs$chr,  
+  ranges = IRanges(start = DMRs$start, end = DMRs$end),
+  feature = DMRs$DMR_Nr,
+  p.value = DMRs$p.value
+)
+#gr_Dmrs
+
+
+DmrTrack <- AnnotationTrack(gr_Dmrs,genome = genome ,chromosome = chr, name = "DMRs", col = "pink", fill = "pink",feature = paste(gr_Dmrs$feature, " P.val=", round(gr_Dmrs$p.value, 5))) # delete pvalue if he dmr table is filtered
+
+#plotTracks(DmrTrack,from = from, to = to, groupAnnotation= "feature")
+```
+
+
+## 1  -Offtarget track
+```{r}
+# the granges of the offtarget is from script 11 
+#gr_offtargets
+
+#pos on chr13 wo offtarget gibt
+von = 113103059
+zu =113104000
+
+offtargetTrack <- AnnotationTrack(gr_offtargets, genome = genome, chromosome = chr,
+                                  name = "potential Off-targets\n[-70,+70]", feature = paste(gr_offtargets$mcols.guide, "\n", gr_offtargets$mcols.Number_of_mismatches, "mismatches"), col= NA,fill = "red")
+
+plotTracks(offtargetTrack, chromosome = "chr13", from = von, to= zu, groupAnnotation ="feature", fontcolor.group= "black")
 ```
 
 ## 1c -beta values pointplot track
@@ -93,48 +191,123 @@ betaTrack <- DataTrack(gr_cpgs, chromosome = chr, genome = genome,
 #           type = c("a", "p"), from = from , to = to) # or with aggregate aggregateGroups = TRUE, aggregation = "mean"
 ```
 
-## 1  -Offtarget track
+
+
+
+
+
+## 1H -Gene track
+### 1H.1 from UCSC -> no gene names -> gave up on this
 ```{r}
-# the granges of the offtarget is from script 11 
-#gr_offtargets
+# you can get a TxDb object from any GFF  file easily 
+#BiocManager::install("TxDb.Hsapiens.UCSC.hg38.knownGene")
+library(TxDb.Hsapiens.UCSC.hg38.knownGene) #--> anstatt knownGene -> refGene
 
-#pos on chr13 wo offtarget gibt
-von = 113103059
-zu =113104000
+TxDb <-  TxDb.Hsapiens.UCSC.hg38.knownGene
+#TxDb
+#unique(feature(GeneTrack))
 
-offtargetTrack <- AnnotationTrack(gr_offtargets, genome = genome, chromosome = chr,
-                                  name = "potential Off-targets\n[-70,+70]", feature = paste(gr_offtargets$mcols.guide, "\n", gr_offtargets$mcols.Number_of_mismatches, "mismatches"), fill = "red")
+# ploting# TxDbploting
+ensTransTrack <- GeneRegionTrack(TxDb, chromosome = chr, name = "gene/transcript", transcriptAnnotation = "gene", just.group = "above")
 
-#plotTracks(offtargetTrack, chromosome = "chr13", from = von, to= zu, featureAnnotation ="feature", fontcolor.feature= "black")
+plotTracks(ensTransTrack, from = from, to =to )
+
+
+
+## try TxDb.Hsapiens.UCSC.hg38.refGene
+#BiocManager::install("TxDb.Hsapiens.UCSC.hg38.refGene")
+library(TxDb.Hsapiens.UCSC.hg38.refGene)
+
+txDb_refGene
+head(genes(txDb_refGene)) # --> just gene ID
+
+
+# Plot the track
+plotTracks(reGenTrack, chromosome = chr)
+plotTracks(reGenTrack, from= from , to= to)
 ```
 
-## 1E -DMR track
-### create DMR Granges 
+
+### 1H.2 from ENsDb: 
 ```{r}
-##### change the DMRnR FROM THE BEGINNING IN THE THE PIPELINE
-DMRs <- read_excel("./Output/8-DMRs_0.01_smooth.xlsx", col_names = TRUE)
+#BiocManager::install("EnsDb.Hsapiens.v86")  # Ensembl 86 (GRCh38)
+#cant pack gene, transcript and exon infos in one granges and plot gene cause it is will be replicated according to the numner of transcripts/ exons bzw.rows
 
-DMRs$DMR_Nr <- paste("DMR", DMRs$DMR_Nr, sep = "")
+# Get EnsDb
+edb <- EnsDb.Hsapiens.v86
+options(ucscChromosomeNames = TRUE)
 
-View(DMRs)
+#To extract specific data, such as transcript or gene information, from an EnsDb object, you can use functions like transcripts(), genes(), and exons().
+######################### Get gene ranges
+tx_gr <- genes(edb)
+#length(tx_gr) # 63970
+#head(tx_gr)
 
-# check if all numbers are numeric
-DMRs <- DMRs %>%
-  mutate(across(c(start, end, length, p.value), as.numeric))
+# Filter to standard chromosomes only????
+tx_gr_filtered <- keepSeqlevels(tx_gr, standardChromosomes(tx_gr), pruning.mode = "coarse")
+#length(tx_gr_filtered) #58650
+#tx_gr_filtered
 
-# create a granges of the DMRs 
-gr_Dmrs <- GRanges(
-  seqnames = DMRs$chr,  
-  ranges = IRanges(start = DMRs$start, end = DMRs$end),
-  feature = DMRs$DMR_Nr,
-  p.value = DMRs$p.value
-)
-#gr_Dmrs
+#h <- GeneRegionTrack(tx_gr_filtered, chromosome = chr, name = "gene/transcript", transcriptAnnotation = "gene_name" ) 
+#plotTracks(h, from = from, to = to) # but i dont get the shön shape only boxes
+geneTrack <- AnnotationTrack(tx_gr_filtered,
+                          chromosome = chr,
+                          name = "Gene Ens",
+                          id= tx_gr_filtered$gene_name)
+plotTracks(geneTrack, from = from, to = to, featureAnnotation= "id", col = "darkblue")
+```
 
 
-DmrTrack <- AnnotationTrack(gr_Dmrs,genome = genome ,chromosome = chr, name = "DMRs", col = "pink", fill = "pink",feature = paste(gr_Dmrs$feature, " P.val=", round(gr_Dmrs$p.value, 5))) # delete pvalue if he dmr table is filtered
 
-#plotTracks(DmrTrack,from = from, to = to, groupAnnotation= "feature")
+### 1H.4 Get transcript ranges (as GRanges) --> not nice to see
+```{r}
+transcript_tx_gr <- transcripts(edb)
+length(transcript_tx_gr) #  216741
+head(seqlevels(transcript_tx_gr))
+
+
+# Filter to standard chromosomes only
+transcript_tx_gr_filt <- keepSeqlevels(transcript_tx_gr, standardChromosomes(transcript_tx_gr), pruning.mode = "coarse")
+length(transcript_tx_gr_filt)# 198739 -->91.69423%
+transcript_tx_gr_filt
+
+#try with geneRegioTrack ---> didnt work: Fehler: kann Vektor der Größe 294.3 GB nicht allozieren
+transTrack <- AnnotationTrack(transcript_tx_gr_filt,
+                          chromosome = chr,
+                          name = "Gene Ens",
+                          id= transcript_tx_gr_filt$tx_id)
+
+plotTracks(transTrack, from = from, to = to, groupAnnotation= "id", just.group= "above")
+```
+
+
+
+
+
+## 1g -SUBTADs Track CAKI2
+```{r}
+# create TAD Granges
+tissue <- "CAKI2"
+chr <- "chr13"
+binsize <- 25
+from <- 95433599
+to <- 95579759
+
+SUBTADs_filepath <- sprintf("../PythonProject/TADs_CAKI2/3_TADs_as_txt_and_Excel/%s_%s_%skb_SubTADs_noDuplicates.txt", tissue, chr, binsize)
+SUBTADs <- read.delim(SUBTADs_filepath, header = TRUE)
+#View(SUBTADs) #80
+
+
+# convert to Granges 
+gr_SUBTADs <- GRanges(seqnames = chr,
+              ranges = IRanges(start = SUBTADs$StartPos, end = SUBTADs$EndPos))
+gr_SUBTADs
+
+### plot tad track
+SUBTadTrack <- AnnotationTrack(gr_SUBTADs, genome = genome, 
+                            name = paste0("SUBTADs\nCaki2\n",binsize, "kb"), col= "black", fill="lightyellow")
+
+#plotTracks(SUBTadTrack, from = from, to = to) # try to change shape 
 ```
 
 
@@ -162,37 +335,10 @@ mcols(gr_TADs) <- TADs[, 1]
 TadTrack <- AnnotationTrack(gr_TADs , genome = genome, 
                             name = paste0("TADs\nCaki2\n",binsize, "kb"), 
                             feature = gr_TADs$TadNr,  
-                            col = "black")
+                            col = "black", fill= "orange")
 
-plotTracks(TadTrack, groupAnnotation = "feature", from = from, to = to) # try to change shape 
+#plotTracks(TadTrack, featureAnnotation = "feature", fontcolor.feature = "darkblue",from = from, to = to) # try to change shape 
 ```
-
-## 1g -SUBTADs Track CAKI2
-```{r}
-# create TAD Granges
-tissue <- "CAKI2"
-chr <- "chr13"
-binsize <- 25
-from <- 95433599
-to <- 95579759
-
-SUBTADs_filepath <- sprintf("../PythonProject/TADs_CAKI2/3_TADs_as_txt_and_Excel/%s_%s_%skb_SubTADs_noDuplicates.txt", tissue, chr, binsize)
-SUBTADs <- read.delim(SUBTADs_filepath, header = TRUE)
-View(SUBTADs) #80
-
-
-# convert to Granges 
-gr_SUBTADs <- GRanges(seqnames = chr,
-              ranges = IRanges(start = SUBTADs$StartPos, end = SUBTADs$EndPos))
-gr_SUBTADs
-
-### plot tad track
-SUBTadTrack <- AnnotationTrack(gr_SUBTADs, genome = genome, 
-                            name = paste0("SUBTADs\nCaki2\n",binsize, "kb"), col= "black")
-
-#plotTracks(SUBTadTrack, from = from, to = to) # try to change shape 
-```
-
 
 ## 1g -TAD Track SKIN -> no files of skin in this dir
 ### 10kb create TAD Granges
@@ -256,185 +402,7 @@ plotTracks(TadTrack_skin_25kb,groupAnnotation = "feature", from = from, to = to)
 ```
 
 
-
-## 1G -CPG Islands track
-```{r}
-# GRanges of CpGIslands
-
-#library(AnnotationHub) #dont work-> all on it are hg19
-
-# download cpgislands from ucsc
-url <- "http://hgdownload.cse.ucsc.edu/goldenpath/hg38/database/cpgIslandExt.txt.gz"
-destfile <- "cpgIslandExt_hg38.txt.gz"
-
-if (!file.exists(destfile)) {
-  download.file(url, destfile)
-  message("File downloaded.")
-} else {
-  message("cpgIslandExt_hg38.txt.gz File already exists. Skipping download.")
-}
- #701 KB
-
-# Read the file (it's gzipped, so use gzfile)
-cpg_Islands <- read.table(gzfile(destfile), header = FALSE, sep = "\t", stringsAsFactors = FALSE)
-
-colnames(cpg_Islands) <- c("bin", "chrom","chromStart","chromEnd","name","length","cpgNum","gcNum","perCpg","perGc", "obsExp")
-#View(cpg_Islands)
-
-#Note: all start coordinates in our database are 0-based, not 1-based. 
-
-# convert to GRanges
-gr_cpgIslands <- GRanges(
-  seqnames = cpg_Islands$chrom,   
-  ranges = IRanges(
-    start = cpg_Islands$chromStart + 1,  # Convert from 0-based to 1-based
-    end = cpg_Islands$chromEnd))
-
-mcols(gr_cpgIslands) <- cbind(
-  feature = cpg_Islands$name,
-  cpg_Islands[, 7:ncol(cpg_Islands)]
-)
-#gr_cpgIslands
-
-# make AnnotationTrack
-cpgIslandTrack <- AnnotationTrack(gr_cpgIslands,
-  chromosome = chr,
-  genome = genome,
-  name = "CpG Islands",
-  feature = mcols(gr_cpgIslands)$feature,
-  fill = "darkgreen")
-
-#plotTracks(cpgIslandTrack, from = from, to = to, groupAnnotation = "feature",just.group = "right")
-```
-
-
-## 1H -Gene track
-### 1H.1 from UCSC -> no gene names
-```{r}
-# you can get a TxDb object from any GFF  file easily 
-#BiocManager::install("TxDb.Hsapiens.UCSC.hg38.knownGene")
-library(TxDb.Hsapiens.UCSC.hg38.knownGene) #--> anstatt knownGene -> refGene
-
-TxDb <-  TxDb.Hsapiens.UCSC.hg38.knownGene
-#TxDb
-#unique(feature(GeneTrack))
-
-# ploting
-ensTransTrack <- GeneRegionTrack(TxDb, chromosome = chr, name = "transcript", start = from, end = to, transcriptAnnotation = "transcript", just.group = "above")
-
-#plotTracks(ensTransTrack)
-```
-
-
-### 1H.2 from ENsDb: cant pack gene, transcript and exon infos in one granges and plot gene cause it is will be replicated according to the numner of transcripts/ exons bzw.rows
-```{r}
-#BiocManager::install("EnsDb.Hsapiens.v86")  # Ensembl 86 (GRCh38)
-
-library(EnsDb.Hsapiens.v86)
-library(Gviz)
-library(GenomicRanges)
-library(GenomeInfoDb)
-
-# Get EnsDb
-edb <- EnsDb.Hsapiens.v86
-
-#To extract specific data, such as transcript or gene information, from an EnsDb object, you can use functions like transcripts(), genes(), and exons().
-
-tx_gr <- transcripts(edb, columns = c("gene_id", "gene_name", "tx_id", "tx_biotype", "exon_id"))
-tx_gr
-length(tx_gr) #1297863
-seqlevelsStyle(tx_gr) <- "UCSC"
-
-# Filter to standard chromosomes only????
-tx_gr_filter <- keepSeqlevels(tx_gr, standardChromosomes(tx_gr), pruning.mode = "coarse")
-length(tx_gr_filter) #1194162 --> 92.00987%
-
-genEnsTrack <- AnnotationTrack(tx_gr_filter,
-                          chromosome = chr,
-                          name = "Gene Ens",
-                          id= tx_gr_filter$gene_name,
-                          feature = tx_gr_filter$tx_id,
-                          group = tx_gr_filter$exon_id)
-plotTracks(genEnsTrack, from = from, to = to, groupAnnotation= "id", just.group= "above")
-```
-
-
-### 1H.3 Get gene ranges (as GRanges) 
-```{r}
-#BiocManager::install("EnsDb.Hsapiens.v86")  # Ensembl 86 (GRCh38)
-library(EnsDb.Hsapiens.v86)
-library(Gviz)
-library(GenomicRanges)
-library(GenomeInfoDb)
-
-# Get EnsDb
-edb <- EnsDb.Hsapiens.v86
-
-#To extract specific data, such as transcript or gene information, from an EnsDb object, you can use functions like transcripts(), genes(), and exons().
-######################### Get gene ranges
-tx_gr <- genes(edb)
-#length(tx_gr) # 63970
-
-# Convert to UCSC style 13 --> chr13
-seqlevelsStyle(tx_gr) <- "UCSC"
-#head(seqlevels(tx_gr))
-#table(seqnames(tx_gr))["chr13"] 
-
-# Filter to standard chromosomes only????
-tx_gr_filtered <- keepSeqlevels(tx_gr, standardChromosomes(tx_gr), pruning.mode = "coarse")
-#length(tx_gr_filtered)#58650
-
-# Subset to just this region
-#tx_gr_sub <- subset(tx_gr, seqnames == chr & start(tx_gr) < to & end(tx_gr) > from)
-#head(tx_gr_sub)
-
-# Make the GeneRegionTrack manually
-geneTrack <- AnnotationTrack(tx_gr_filtered,
-                          chromosome = chr,
-                          name = "Gene Ens",
-                          id= tx_gr_filtered$gene_name)
-
-plotTracks(geneTrack, from = from, to = to, featureAnnotation= "id", fontcolor.feature = "darkblue")
-```
-
-
-
-### 1H.4 Get transcript ranges (as GRanges) --> not nice to see
-```{r}
-transcript_tx_gr <- transcripts(edb)
-length(transcript_tx_gr) #  216741
-
-# Convert to UCSC style 13 --> chr13
-seqlevelsStyle(transcript_tx_gr) <- "UCSC"
-head(seqlevels(transcript_tx_gr))
-table(seqnames(transcript_tx_gr))["chr13"] 
-
-
-# Filter to standard chromosomes only
-transcript_tx_gr_filt <- keepSeqlevels(transcript_tx_gr, standardChromosomes(transcript_tx_gr), pruning.mode = "coarse")
-# Check again
-length(transcript_tx_gr_filt)# 198739 -->91.69423%
-
-transcript_tx_gr_filt
-
-
-# Subset to just this region
-#tx_gr_sub <- subset(tx_gr, seqnames == chr & start(tx_gr) < to & end(tx_gr) > from)
-#head(tx_gr_sub)
-
-# Make the GeneRegionTrack manually
-transTrack <- AnnotationTrack(transcript_tx_gr_filt,
-                          chromosome = chr,
-                          name = "Gene Ens",
-                          id= transcript_tx_gr_filt$tx_id)
-
-plotTracks(transTrack, from = from, to = to, groupAnnotation= "id", just.group= "above")
-```
-
-
-
-
-## 1 - Plot all tracks together + save
+## 1 - function to Plot all tracks together + save
 ```{r}
 # Suppress labels on atrack
 #displayPars(atrack) <- list(groupAnnotation = "none",showFeatureId = FALSE)
@@ -445,15 +413,18 @@ plotGvizTracks <- function(from, to){
     displayPars(cpgIslandTrack) <- list(groupAnnotation = "feature") 
     displayPars(sondentrack) <- list(stacking= "dense") 
     displayPars(geneTrack) <- list(featureAnnotation= "id",fontcolor.feature = "darkblue") 
-    displayPars(offtargetTrack) <- list(featureAnnotation ="feature", fontcolor.feature= "black") 
+    displayPars(offtargetTrack) <- list(groupAnnotation ="feature", fontcolor.group= "black") 
+    displayPars(TadTrack) <- list(featureAnnotation= "feature",fontcolor.feature = "darkblue") 
 
-    plotTracks(list(itrack, gtrack, sondentrack, DmrTrack, cpgIslandTrack, offtargetTrack,dTrack,geneTrack,ensTransTrack,SUBTadTrack,TadTrack),
+
+    plotTracks(list(itrack, gtrack, sondentrack,cpgIslandTrack, DmrTrack, offtargetTrack,dTrack,geneTrack,SUBTadTrack,TadTrack),#ensTransTrack
     from = from, to = to,
     showBandId = TRUE, cex.bands = 0.7,
     groups = rep(c("unguided", "guided"), each = 4),type = c("a", "p"),
     transcriptAnnotation = "transcript",
     cex.group = 0.9,
-    cex.legend = 0.9, 
+    cex.legend = 0.9,
+    cex.title = 0.75 , # size of the track names
     col.title = "black",
     "Other" = "lightblue",
     "CLDN10_IsoA" = "blue",
@@ -470,14 +441,19 @@ plotGvizTracks <- function(from, to){
 ```
 
 
+
 # shiny app
 ```{r}
 # Example ranges for DMRs (replace with your actual ones)
 dmr_ranges <- list(
   DMR1 = c(95433599, 95579759),
-  DMR2 = c(von, zu),
-  DMR3 = c(96000000, 96150000)
+  TAD28 = c(94625000, 97850000), 
+  SubTAD65 = c(94550000, 95875000),
+  offtarget_g2 = c(113103059, 113106500),
+  offtarget_g5 = c(110956200, 110958900)
+
 )
+
 
 chr13_length <- 114364328
 
@@ -487,15 +463,16 @@ ui <- fluidPage(
     sidebarPanel( width = 2,
       selectInput("dmr", "Choose DMR:", choices = names(dmr_ranges), selected = "DMR1"),
       #sliderInput("range", "Genomic Range on chr13:",min = 1, max = chr13_length,value = dmr_ranges[["DMR1"]],step = 25000)
-      br(), br(),
       numericInput("from", "From:", value = dmr_ranges[["DMR1"]][1], min = 1, max = chr13_length),
       numericInput("to", "To:", value = dmr_ranges[["DMR1"]][2], min = 1, max = chr13_length),
+      helpText("Note: The boundaries of TADs and sub-TADs are approximate and depend on the resolution of the TAD-calling algorithm. The resolution used is indicated in the name of the TAD and sub-TAD tracks."),
       actionButton("update", "Submit"),
       br(), br(), br(),
       downloadButton("downloadPlot", "Save Plot as PDF")
     ),
     mainPanel( width= 10,
-      plotOutput("gvizPlot", height = "800px")
+      plotOutput("gvizPlot", height = "1000px")
+      
     )
   )
 )

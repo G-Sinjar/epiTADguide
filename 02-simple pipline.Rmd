@@ -13,42 +13,26 @@ knitr::opts_chunk$set(echo = TRUE)
 
 This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
 
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
-
-```{r cars}
-summary(cars)
-```
-
-## Including Plots
-
-You can also embed plots, for example:
-
-```{r pressure, echo=FALSE}
-plot(pressure)
-```
-
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
-
-
-
-
-
-
-
-
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document.
 
 
 
 # library
 ```{r}
 library(minfi)
+library("IlluminaHumanMethylationEPICv2manifest")
+library(IlluminaHumanMethylationEPICv2anno.20a1.hg38)
+library(readxl)
 ```
 
 # Reading the SampleSheet file
 ```{r}
-RawDataDir <- "C:\\Users\\ghaza\\Documents\\ghazal\\Bioinformatik_Fächer\\Masterarbeit_Project\\Data\\RawData\\epic_data\\2024_071_ILL_METUVG_N_8\\METUVG"
+# Note the folder you provide should have the sampleSheet excel table and another folder where the red and Green row idat files are saved
+RawDataDir <- "C:\\Users\\ghaza\\Documents\\ghazal\\Bioinformatik_Fächer\\Masterarbeit_Project\\Data\\CLDN10_RawData\\epic_data\\2024_071_ILL_METUVG_N_8\\METUVG"
 
-targets <- read.metharray.sheet(RawDataDir)
+targets <- read.metharray.sheet(RawDataDir) # should the samplesheet be csv like in our dataset? # check also the columns some must be there 
+#if you get theis messege "[read.metharray.sheet] Found the following CSV files:" then IT WORKED 
+#Contains all probes, including:Quality control probes, Out-of-band probes, Control probes--> Dimensions: more probes than will be used for methylation analysis.
 #writexl::write_xlsx(targets, "./Output/Samples-targets.xlsx")
 ```
 
@@ -56,59 +40,33 @@ targets <- read.metharray.sheet(RawDataDir)
 # Load methydata from idat files 
 ```{r}
 RGset <- read.metharray.exp(targets = targets)
-RGset #1105209 # assays red + green
+dim(RGset) #1105209 # assays red + green
 
-library("IlluminaHumanMethylationEPICv2manifest")
 manifest <- getManifest(RGset)
 manifest
 
 ## duplicates finding
-probeIDs <- featureNames(RGset)  # For RGChannelSet or MethylSet
-anyDuplicated(probeIDs)
+#probeIDs <- featureNames(RGset)  # For RGChannelSet or MethylSet
+#anyDuplicated(probeIDs)
 
 
 raw_normalised <- preprocessRaw(RGset)
-#raw_normalised # assays: Meth + Unmeth #936990
+raw_normalised # assays: Meth + Unmeth #936990
+#These objects contain only the probes with usable methylation data:
 ```
 
 # Quality control:
+## 1-  raw Intensities plot 
 ```{r}
-# plot raw Intensities
 png("./Plots/red_green_channel_plot.png", width = 800, height = 600)
 plot(density(as.vector(assay(RGset, "Red"))), main = "Channel Intensities", lwd = 2) 
 lines(density(as.vector(assay(RGset, "Green"))), col = "green", lwd = 2)
 legend("topright", legend = c("Red Channel", "Green Channel"), col = c("black", "green"), lwd = 2)
 dev.off()
+```
 
-
-## Badewanne plot: Beta plot (probability density plot)
-densityPlot(RGset, sampGroups = targets$Sample_Label, main ="Beta values distribution of raw data", xlab = "Beta values")
-
-## Bean plot 
-par(mar = c(5, 6, 4, 2)) # Bottom, left, top, right margins (default is c(5, 4, 4, 2))
-densityBeanPlot(RGset, sampGroups = targets$Sample_Label, sampNames = targets$Sample_Name)
-
-## QC report
-qcReport(RGset, sampNames = targets$Sample_Name, sampGroups = targets$Sample_Group0, pdf = "qcReport.pdf" )
-
-# MDS plot (multi dimensional scaling plot) samples PCA
-par(mfrow = c(2, 3), mar = c(1.7, 1.7, 1.4, 0.4)) 
-mdsPlot(RGset, sampNames = targets$Array, sampGroups = targets$Sample_Group ,main = "Raw Beta MDS", legendNCol = 1, legendPos = "topright")
-
-mdsPlot(noob_normalised, sampNames = targets$Array, sampGroups = targets$Sample_Group, main = "noob Beta MDS", legendNCol = 1, legendPos = "topright")
-mdsPlot(SWAN_normalised, sampNames = targets$Array, sampGroups = targets$Sample_Group, main = "SWAN Beta MDS", legendNCol = 1 ,legendPos = "topright")
-mdsPlot(getBeta(funnorm_normalised), sampNames = targets$Array, sampGroups = targets$Sample_Group, main = "funnorm Beta MDS", legendNCol = 1,legendPos = "topright")
-mdsPlot(getBeta(Quantile_normalised), sampNames = targets$Array, sampGroups = targets$Sample_Group, main = "Quantile Beta MDS ", legendNCol = 1,legendPos = "topright")
-
-
-# Badewanne mit probe types
-pdf("plot_comparison.pdf", width=12, height=6)  # Larger PDF
-par(mfrow=c(1,2))
-plotBetasByType(raw_normalised[,1], main = "Raw")
-plotBetasByType(SWAN_normalised[,1], main = "SWAN")
-dev.off() 
-
-#### sample-specific QC
+## 2- sample-specific QC
+```{r}
 qc <- getQC(raw_normalised)
 qc   # log2 Medien plot: Methy and unmeth intensities
 raw_normalised <- addQC(raw_normalised, qc)
@@ -116,7 +74,36 @@ plotQC(qc)
 pData(raw_normalised)
 ```
 
+## 3- MDS plot (multi dimensional scaling plot) samples PCA
+```{r}
+par(mfrow = c(2, 3), mar = c(1.7, 1.7, 1.4, 0.4)) 
+mdsPlot(RGset, sampNames = targets$Array, sampGroups = targets$Sample_Group ,main = "Raw Beta MDS", legendNCol = 1, legendPos = "topright")
 
+mdsPlot(noob_normalised, sampNames = targets$Array, sampGroups = targets$Sample_Group, main = "noob Beta MDS", legendNCol = 1, legendPos = "topright")
+mdsPlot(SWAN_normalised, sampNames = targets$Array, sampGroups = targets$Sample_Group, main = "SWAN Beta MDS", legendNCol = 1 ,legendPos = "topright")
+mdsPlot(getBeta(funnorm_normalised), sampNames = targets$Array, sampGroups = targets$Sample_Group, main = "funnorm Beta MDS", legendNCol = 1,legendPos = "topright")
+mdsPlot(getBeta(Quantile_normalised), sampNames = targets$Array, sampGroups = targets$Sample_Group, main = "Quantile Beta MDS ", legendNCol = 1,legendPos = "topright")
+```
+
+## 4- Badewanne plot: Beta plot (probability density plot)
+```{r}
+## raw data
+densityPlot(RGset, sampGroups = targets$Sample_Label, main ="Beta values distribution of raw data", xlab = "Beta values")
+
+### Bean plot 
+par(mar = c(5, 6, 4, 2)) # Bottom, left, top, right margins (default is c(5, 4, 4, 2))
+densityBeanPlot(RGset, sampGroups = targets$Sample_Label, sampNames = targets$Sample_Name)
+
+### QC report
+qcReport(RGset, sampNames = targets$Sample_Name, sampGroups = targets$Sample_Group0, pdf = "qcReport.pdf" )
+
+# Badewanne mit probe types
+pdf("plot_comparison.pdf", width=12, height=6)  # Larger PDF
+par(mfrow=c(1,2))
+plotBetasByType(raw_normalised[,1], main = "Raw")
+plotBetasByType(SWAN_normalised[,1], main = "SWAN")
+dev.off() 
+```
 
 
 # Normalisation
@@ -151,11 +138,13 @@ densityPlot(noob.swan_normalised,sampGroups = targets$Sample_Label, main = "Beta
 ```{r}
 #---------------first level filtering: cpgs that passed the threshold in all samples --> sample reliability----------
 detectp <- detectionP(RGset)
-#dim(detectp) #936990      8
+dim(detectp) #936990      8
 
-all.equal(row.names(SWAN_normalised), row.names(detectp))  #TRUE
-absent <- apply(detectp, 1, function(x) sum(x>0.01)) 
-table(absent) #-> 911931 -_>  97.32559%
+
+if (all.equal(row.names(SWAN_normalised), row.names(detectp))){
+  absent <- apply(detectp, 1, function(x) sum(x>0.01)) 
+  table(absent) #-> 911931 -_>  97.32559%
+}
 
 SWAN_filtered <- SWAN_normalised[absent == 0] # 911931 
 
@@ -166,8 +155,6 @@ SWAN_filtered <- SWAN_normalised[absent == 0] # 911931
 
 # Map to the Genome:
 ```{r}
-library(IlluminaHumanMethylationEPICv2anno.20a1.hg38)
-
 Geno_SWAN_filtered <- mapToGenome(SWAN_filtered, mergeManifest = TRUE)
 #dim(Geno_SWAN_filtered) #905075
 # assays methy unmethyl
@@ -195,6 +182,33 @@ ratio_geno_Swan_NoSNP <- dropLociWithSnps(ratio_geno_Swan, snps = c("SBE", "CpG"
 #891492    8
 ```
 
+# stats table
+```{r}
+# Get row counts
+raw_n <- nrow(raw_normalised)
+reliable_n <- nrow(SWAN_filtered)
+mapped_n <- nrow(Geno_SWAN_filtered)
+no_snp_n <- nrow(ratio_geno_Swan_NoSNP)
+snp_n <- nrow(ratio_geno_Swan) - no_snp_n
+
+# Create matrix or data frame
+stats <- data.frame(
+  "Number of CpGs" = c(raw_n, reliable_n, mapped_n, snp_n, no_snp_n),
+  "% from raw" = round(c(
+    100,
+    reliable_n / raw_n * 100,
+    mapped_n / raw_n * 100,
+    snp_n / raw_n * 100,
+    no_snp_n / raw_n * 100
+  ), 2)
+)
+
+rownames(stats) <- c("Raw data", "Reliable CpGs", "Mapped CpGs", "CpGs representing SNPs", "CpGs without SNPs")
+stats
+```
+
+
+
 # Get annotation data
 ```{r}
 annotation <- getAnnotation(ratio_geno_Swan_NoSNP)
@@ -215,6 +229,21 @@ annotated_with_betas_df <- as.data.frame(annotated_with_betas)
 # View(annotated_with_betas_df)
 ```
 
+# retreat tables
+```{r}
+Swan_0.01_Beta_rownames <- cbind(CpGs = rownames(ratio_geno_Swan_NoSNP_Beta), ratio_geno_Swan_NoSNP_Beta)
+writexl::write_xlsx(Swan_0.01_Beta_rownames, "./Output/2-Beta_values_SWAN_0.01.xlsx", col_names = TRUE)
+
+M_values_0.01_df_rownames <- cbind(CpGs = rownames(M_values_0.01_df), M_values_0.01_df)
+writexl::write_xlsx(M_values_0.01_df_rownames, "./Output/3-M_values_SWAN_0.01.xlsx", col_names = TRUE)
+
+
+annotated_with_betas_rownames <- cbind(CpGs = rownames(annotated_with_betas_df), annotated_with_betas_df)
+writexl::write_xlsx(annotated_with_betas_rownames, "./Output/4-annotation_0.01_with_betas.xlsx", col_names = TRUE)
+
+CpGs_CLDN10_with_rownames <- cbind(CpGs = rownames(CpGs_CLDN10), CpGs_CLDN10)
+writexl::write_xlsx(CpGs_CLDN10_with_rownames, "./Output/5-CpGs_of_CLDN10.xlsx", col_names = TRUE)
+```
 
 # get lage auf dem Chr -> file from ucsc -> the lines dont have a consistence length -> didnt work
 ```{r}
@@ -340,33 +369,4 @@ View(annotation_df)
 
 # save table
 writexl::write_xlsx(annotation_df, "./Output/annotation_0.,01_cytoband.xlsx")
-```
-
-# retreat tables
-```{r}
-Swan_0.01_Beta_rownames <- cbind(CpGs = rownames(ratio_geno_Swan_0.01_NoSNP_Beta_df), ratio_geno_Swan_0.01_NoSNP_Beta_df)
-writexl::write_xlsx(Swan_0.01_Beta_rownames, "./Output/2-Beta_values_SWAN_0.01.xlsx", col_names = TRUE)
-
-M_values_0.01_df_rownames <- cbind(CpGs = rownames(M_values_0.01_df), M_values_0.01_df)
-writexl::write_xlsx(M_values_0.01_df_rownames, "./Output/3-M_values_SWAN_0.01.xlsx", col_names = TRUE)
-
-
-annotated_with_betas_rownames <- cbind(CpGs = rownames(annotated_with_betas_df), annotated_with_betas_df)
-writexl::write_xlsx(annotated_with_betas_rownames, "./Output/4-annotation_0.01_with_betas.xlsx", col_names = TRUE)
-
-CpGs_CLDN10_with_rownames <- cbind(CpGs = rownames(CpGs_CLDN10), CpGs_CLDN10)
-writexl::write_xlsx(CpGs_CLDN10_with_rownames, "./Output/5-CpGs_of_CLDN10.xlsx", col_names = TRUE)
-
-
-
-
-
-# the 3 excel tables are already created --> load the excel tables
-library(readxl)
-
-
-annotated_with_betas_df <- read_excel("./Output/4-annotation_0.01_with_betas.xlsx", col_names = TRUE)
-CpGs_CLDN10 <- read_excel("./Output/CpGs_of_CLDN10.xlsx", col_names = TRUE)
-ratio_geno_Swan_0.01_NoSNP_Beta_df <- read.excel("./Output/2-Beta_values_SWAN_0.01", col_names= TRUE)
-M_values_0.01_df <- read_excel("./Output/3-M_values_SWAN_0.01.xlsx", col_names = TRUE)
 ```

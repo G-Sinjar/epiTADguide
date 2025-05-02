@@ -76,7 +76,6 @@ View(guide2)
 
 # or combined offspotter results
 ```{r}
-# function to read the txt offspotter results from all guides and add them together in one table
 read_guide_files <- function(file_path, num_guides) {
   # Define column names
   col_names <- c("Chrom", "Strand", "Start", "End", "Given query", "Actual genomic hit", 
@@ -93,7 +92,7 @@ read_guide_files <- function(file_path, num_guides) {
     guide_file <- paste0(file_path, "/guide", i, ".txt")
     
     # Read each guide file
-    guide_data <- read_delim(guide_file, delim = "\t", col_names = FALSE, show_col_types = FALSE)
+    guide_data <- readr::read_delim(guide_file, delim = "\t", col_names = FALSE, show_col_types = FALSE)
     
     # Assign custom column names
     colnames(guide_data) <- col_names
@@ -110,20 +109,26 @@ read_guide_files <- function(file_path, num_guides) {
   }
   
   # Combine all guide tables into one large data frame
-  combined_guides <- bind_rows(all_guides)
+  combined_guides <- dplyr::bind_rows(all_guides)
   
+  # !!! USE dplyr::filter !!!
   just_offtargets <- combined_guides %>%
-    filter(`Number_of_mismatches` !=  0)
+    dplyr::filter(`Number_of_mismatches` != 0)
   
   return(just_offtargets)
 }
+```
+
 
 # Path to the offspotter result folder
+```{r}
 offspoter_result_path <- "C:/Users/ghaza/Documents/ghazal/Bioinformatik_Fächer/Masterarbeit_Project/Results/offspotter_results"
 
 # Read in all the guides (assuming 6 guides)
 num_guides <- 6
 combined_Offspotter_guideResults <- read_guide_files(offspoter_result_path, num_guides)
+
+
 
 View(combined_Offspotter_guideResults)
 ```
