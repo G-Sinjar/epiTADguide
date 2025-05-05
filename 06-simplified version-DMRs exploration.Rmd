@@ -26,7 +26,7 @@ library("IlluminaHumanMethylationEPICv2manifest")
 
 # Reading the SampleSheet file
 ```{r}
-RawDataDir <- "C:\\Users\\ghaza\\Documents\\ghazal\\Bioinformatik_Fächer\\Masterarbeit_Project\\Data\\RawData\\epic_data\\2024_071_ILL_METUVG_N_8\\METUVG"
+RawDataDir <- "C:\\Users\\ghaza\\Documents\\ghazal\\Bioinformatik_Fächer\\Masterarbeit_Project\\Data\\CLDN10_RawData\\epic_data\\2024_071_ILL_METUVG_N_8\\METUVG"
 
 targets <- read.metharray.sheet(RawDataDir)
 ```
@@ -54,7 +54,7 @@ SWAN_normalised <- preprocessSWAN(RGset, raw_normalised)
 ```{r}
 #---------------first level filtering: cpgs that passed the threshold in all samples ----------
 detectp <- detectionP(RGset)
-dim(detectp) #936990      8
+#dim(detectp) #936990      8
 
 # 2. Absent vector
 all.equal(row.names(SWAN_normalised), row.names(detectp))  #TRUE
@@ -82,8 +82,8 @@ dim(ratio_geno_Swan_0.01) #905075       8
 ```{r}
 snps_0.01 <- getSnpInfo(ratio_geno_Swan_0.01)
 ratio_geno_Swan_0.01 <- addSnpInfo(ratio_geno_Swan_0.01)
-ratio_geno_Swan_0.01_NoSNP <- dropLociWithSnps(ratio_geno_Swan_0.01, snps = c("SBE", "CpG"), maf = 0)
-ratio_geno_Swan_0.01_NoSNP # 891492
+ratio_geno_Swan_NoSNP <- dropLociWithSnps(ratio_geno_Swan_0.01, snps = c("SBE", "CpG"), maf = 0)
+ratio_geno_Swan_NoSNP # 891492
 ```
 
 
@@ -108,8 +108,8 @@ annotated_with_betas_df <- as.data.frame(annotated_with_betas)
 # Preparing for bumhunter
 ```{r}
 # 1. Define the phenotype of interest
-pheno <- pData(ratio_geno_Swan_0.01_NoSNP)$Sample_Group
-# 2. Change the reference level to "unguided"
+pheno <- pData(ratio_geno_Swan_NoSNP)$Sample_Group
+# 2. Change the reference level to "unguided" so the value is minus on chr13 target
 if (!is.factor(pheno)) {
   pheno <- factor(pheno)
 }
@@ -138,13 +138,17 @@ View(dmrs2$table)
 library(doParallel)
 registerDoParallel(cores = 6)
 
-dmrs_0.01_smooth <- bumphunter(ratio_geno_Swan_0.01_NoSNP, design = designMatrix, cutoff = 0.15, B=100, type="Beta", maxGap = 500, smooth = TRUE) 
-# 16 DMRs 
+dmrs <- bumphunter(ratio_geno_Swan_NoSNP, design = designMatrix, cutoff = 0.15, B=100, type="Beta", smooth = TRUE) 
+head(dmrs)
+#0,2 B=0 --> 1dmr chr6
+#0,15 B=0 --> 16 DMR
+#0,15 B=100 --> 16 DMR
 ```
 
 # Editing the DMR table
 ```{r}
-DMRtable <- dmrs_0.01_smooth$table
+#library(dplyr)
+DMRtable <- dmrs$table
 
 # ------ Add DMR length -----------
 DMRtable$length <- DMRtable$end - DMRtable$start
@@ -155,12 +159,18 @@ DMRtable<- DMRtable[order(DMRtable$length, decreasing = TRUE), ]
 #--------add DMR.Nr. column ---------
 DMRtable$DMR_Nr <- seq_len(nrow(DMRtable))
 
-#------ reorder the columns --------------
-column_order <- c("DMR_Nr", "chr","start", "end", "length", setdiff(names(DMRtable), c("DMR_Nr","chr" ,"start", "end", "length")))
-DMRtable <- DMRtable[, column_order]
-
 #------- change the pvalue from scientific to normal values----------
 DMRtable$p.value <- format(DMRtable$p.value, scientific = FALSE)
+
+#------- change the pvalue from scientific to normal values----------
+DMRtable <- DMRtable %>% rename(mean.methy.difference  =value)
+DMRtable <- DMRtable %>% rename(CpGs.inDMR  =L)
+DMRtable <- DMRtable %>% rename(CpGs.inCluster  =clusterL)
+
+#------ reorder the columns --------------
+column_order <- c("DMR_Nr", "chr","start", "end", "length","mean.methy.difference", "CpGs.inDMR", "CpGs.inCluster" ,"p.value" ,"fwer" ,setdiff(names(DMRtable), c("DMR_Nr","chr" ,"start", "end", "length","mean.methy.difference", "CpGs.inDMR", "CpGs.inCluster","p.value" ,"fwer")))
+DMRtable <- DMRtable[, column_order]
+
 
 dmrs_0.01_smooth <- DMRtable
 rm(DMRtable)
