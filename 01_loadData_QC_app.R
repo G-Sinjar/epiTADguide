@@ -3,7 +3,7 @@
 # 1- load data
 #RawDataDir <- "C:\\Users\\ghaza\\Documents\\ghazal\\Bioinformatik_Fächer\\Masterarbeit_Project\\Data\\CLDN10_RawData\\epic_data\\2024_071_ILL_METUVG_N_8\\METUVG"
 #targets <- read.metharray.sheet(RawDataDir)
-# Load methydata from idat files 
+#Load methydata from idat files 
 #RGset <- read.metharray.exp(targets = targets)
 #manifest <- getManifest(RGset)
 #manifest
@@ -107,42 +107,55 @@ server <- function(input, output, session) {
     # Normalize path
     RawDataDir <- gsub("\\\\", "/", input$dir_path)
 
-    # Step 1: Read Sample Sheet
+  # Step 1: Read Sample Sheet
     status(paste(status(), "\nStep 1: Reading Sample Sheet..."))
+    
     targets <- tryCatch({
       read.metharray.sheet(RawDataDir)
     }, error = function(e) {
       status(paste(status(), "\n❌ Error in Step 1:", e$message))
       return(NULL)
+    },
+    warning <- function(w) {
+      status(paste(status(), "\n❌  Warning in Step 1:", w$message))
     })
+    
     if (is.null(targets)) return()
     status(paste(status(), "\n✅ Sample Sheet loaded."))
 
-    # Step 2: Load IDAT files
+  # Step 2: Load IDAT files
     status(paste(status(), "\nStep 2: Loading IDAT files..."))
+    
     RGset <<- tryCatch({
       read.metharray.exp(targets = targets)
     }, error = function(e) {
       status(paste(status(), "\n❌ Error in Step 2:", e$message))
       return(NULL)
+    },
+    warning <- function(w) {
+      status(paste(status(), "\n❌  Warning in Step 2", w$message))
     })
+    
     if (is.null(RGset)) return()
     status(paste(status(), "\n✅ IDAT files loaded."))
 
-    # Step 3: Get Manifest
+  # Step 3: Get Manifest
     status(paste(status(), "\nStep 3: Getting array manifest info..."))
+    
     manifest <- tryCatch({
       getManifest(RGset)
     }, error = function(e) {
       status(paste(status(), "\n❌ Error in Step 3:", e$message))
       return(NULL)
     })
+    
     if (is.null(manifest)) return()
     output$manifest_output <- renderPrint({ manifest })
     status(paste(status(), "\n✅ Manifest info retrieved."))
 
-    # Step 4: Preprocess
+  # Step 4: Preprocess
     status(paste(status(), "\nStep 4: Converting to locus-level data..."))
+    
     raw_normalised <<- tryCatch({
       preprocessRaw(RGset)
     }, error = function(e) {
@@ -153,8 +166,9 @@ server <- function(input, output, session) {
     dims <- dim(raw_normalised)
     status(paste(status(), "\n✅ Locus-level data ready. Dimensions: ", paste(dims, collapse = " x ")))
 
-    # Step 5: Sample info
+  # Step 5: Sample info
     status(paste(status(), "\nStep 5: Extracting sample info and CpG count..."))
+    
     sample_names <- sampleNames(RGset)
     num_samples <- length(sample_names)
     num_cpgs <- nrow(raw_normalised)
