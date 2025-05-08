@@ -21,88 +21,7 @@ The preview shows you a rendered HTML copy of the contents of the editor. Conseq
 # library
 ```{r}
 library(minfi)
-library("IlluminaHumanMethylationEPICv2manifest")
-```
-
-# Reading the SampleSheet file
-```{r}
-RawDataDir <- "C:\\Users\\ghaza\\Documents\\ghazal\\Bioinformatik_Fächer\\Masterarbeit_Project\\Data\\CLDN10_RawData\\epic_data\\2024_071_ILL_METUVG_N_8\\METUVG"
-
-targets <- read.metharray.sheet(RawDataDir)
-```
-
-# Load methydata from idat files 
-```{r}
-RGset <- read.metharray.exp(targets = targets)
-
-manifest <- getManifest(RGset)
-#manifest
-
-raw_normalised <- preprocessRaw(RGset)
-```
-
-#QC
-
-# Normalisation
-```{r}
-set.seed(123)
-SWAN_normalised <- preprocessSWAN(RGset, raw_normalised)
-```
-
-
-# Filtering 0,01
-```{r}
-#---------------first level filtering: cpgs that passed the threshold in all samples ----------
-detectp <- detectionP(RGset)
-#dim(detectp) #936990      8
-
-# 2. Absent vector
-all.equal(row.names(SWAN_normalised), row.names(detectp))  #TRUE
-absent_0.01 <- apply(detectp, 1, function(x) sum(x>0.01)) 
-table(absent_0.01) #-> 911931 -_>  97.32559%
-
-# 3. Filtering SWAN: Absent == 0 --> the probe is relaiably detected in all samples
-SWAN_filtered_0.01 <- SWAN_normalised[absent_0.01 == 0] # 911931   
-```
-
-
-# Map to the Genome:
-```{r}
-Geno_SWAN_filtered_0.01 <- mapToGenome(SWAN_filtered_0.01, mergeManifest = TRUE)
-dim(Geno_SWAN_filtered_0.01) # 905075
-```
-
-# Convert GenoMethylSet to a GenoRatioSet (Beta + M): 
-```{r}
-ratio_geno_Swan_0.01 <- ratioConvert(Geno_SWAN_filtered_0.01,what = "both", keepCN= TRUE)
-dim(ratio_geno_Swan_0.01) #905075       8
-```
-
-# removing SNPs 
-```{r}
-snps_0.01 <- getSnpInfo(ratio_geno_Swan_0.01)
-ratio_geno_Swan_0.01 <- addSnpInfo(ratio_geno_Swan_0.01)
-ratio_geno_Swan_NoSNP <- dropLociWithSnps(ratio_geno_Swan_0.01, snps = c("SBE", "CpG"), maf = 0)
-ratio_geno_Swan_NoSNP # 891492
-```
-
-
-
-# Get annotation data
-```{r}
-annotation <- getAnnotation(ratio_geno_Swan_NoSNP)
-annotation_df <- as.data.frame(annotation)
-#dim(annotation_df) # 891492     42
-
-ratio_geno_Swan_NoSNP_Beta <- getBeta(ratio_geno_Swan_NoSNP)
-
-# 2. Combine methylation values with annotation:
-if (identical(rownames(annotation_df),rownames(ratio_geno_Swan_NoSNP_Beta))){ 
-    annotated_with_betas <- cbind(annotation, ratio_geno_Swan_NoSNP_Beta)
-} 
-#dim(annotated_with_betas) #  896581     50
-annotated_with_betas_df <- as.data.frame(annotated_with_betas)
-#View(annotated_with_betas_df)
+library(dplyr)
 ```
 
 # Preparing for bumhunter
@@ -137,51 +56,57 @@ View(dmrs2$table)
 ```{r}
 library(doParallel)
 registerDoParallel(cores = 6)
-
-dmrs <- bumphunter(ratio_geno_Swan_NoSNP, design = designMatrix, cutoff = 0.15, B=100, type="Beta", smooth = TRUE) 
-head(dmrs)
+dmrs <- bumphunter(ratio_geno_Swan_NoSNP, design = designMatrix, cutoff = 0.15, B=0, type="Beta", smooth = TRUE) 
+View(dmrs$table) # info u get pvalue only of B>0
 #0,2 B=0 --> 1dmr chr6
 #0,15 B=0 --> 16 DMR
 #0,15 B=100 --> 16 DMR
 ```
 
-# Editing the DMR table
+# function: Editing the DMR table
 ```{r}
-#library(dplyr)
-DMRtable <- dmrs$table
+edit_dmr_table <- function(dmrs) {
+  DMRtable <- dmrs$table
+  
+  # Add length column 
+  DMRtable$length <- DMRtable$end - DMRtable$start
+  
+  # Order by length
+  DMRtable <- DMRtable[order(DMRtable$length, decreasing = TRUE), ]
+  
+  # Add DMR_Nr
+  DMRtable$DMR_Nr <- paste0("DMR", seq_len(nrow(DMRtable)))
+  
+  # Round numeric columns, but keep whole numbers as integers
+  num_cols <- sapply(DMRtable, is.numeric)  # Identify numeric columns
+  
+  DMRtable[num_cols] <- lapply(DMRtable[num_cols], function(x) {
+    if (all(x == floor(x))) {  # Check if all values are whole numbers
+      return(as.integer(x))    # Keep them as integers
+    } else {
+      return(round(x, 5))      # Otherwise, round to 5 decimal places
+    }
+  })
+  
+  DMRtable <- DMRtable %>% rename(mean.methy.difference = value,
+                                  CpGs.inDMR = L,
+                                  CpGs.inCluster = clusterL)
+  
+  # Reorder columns safely
+  desired_cols <- c("DMR_Nr", "chr", "start", "end", "length", 
+                    "mean.methy.difference", "CpGs.inDMR", 
+                    "CpGs.inCluster", "p.value", "fwer")
+  available_cols <- names(DMRtable)
+  column_order <- c(
+    desired_cols[desired_cols %in% available_cols],
+    setdiff(available_cols, desired_cols)
+  )
+  
+  DMRtable <- DMRtable[, column_order, drop = FALSE]
+  return(DMRtable)
+}
 
-# ------ Add DMR length -----------
-DMRtable$length <- DMRtable$end - DMRtable$start
-
-#--------sort DMRs from the longest ----------
-DMRtable<- DMRtable[order(DMRtable$length, decreasing = TRUE), ]
-
-#--------add DMR.Nr. column ---------
-DMRtable$DMR_Nr <- seq_len(nrow(DMRtable))
-
-#------- change the pvalue from scientific to normal values----------
-DMRtable$p.value <- format(DMRtable$p.value, scientific = FALSE)
-
-#------- change the pvalue from scientific to normal values----------
-DMRtable <- DMRtable %>% rename(mean.methy.difference  =value)
-DMRtable <- DMRtable %>% rename(CpGs.inDMR  =L)
-DMRtable <- DMRtable %>% rename(CpGs.inCluster  =clusterL)
-
-#------ reorder the columns --------------
-column_order <- c("DMR_Nr", "chr","start", "end", "length","mean.methy.difference", "CpGs.inDMR", "CpGs.inCluster" ,"p.value" ,"fwer" ,setdiff(names(DMRtable), c("DMR_Nr","chr" ,"start", "end", "length","mean.methy.difference", "CpGs.inDMR", "CpGs.inCluster","p.value" ,"fwer")))
-DMRtable <- DMRtable[, column_order]
-
-
-dmrs_0.01_smooth <- DMRtable
-rm(DMRtable)
-View(dmrs_0.01_smooth)
-```
-
-# test
-```{r}
-setdiff(dmrs_smooth$start, dmrs_0.01_smooth$start) #76422394  80002882 159094539 138138669
-missimg_cpgs <- dmrs_smooth[dmrs_smooth$start %in% c(76422394, 80002882, 159094539, 138138669), ]
-View(missimg_cpgs)
+dmrs_tbl <- edit_dmr_table(dmrs)
 ```
 
 # save/ get DMR table
@@ -192,93 +117,20 @@ writexl::write_xlsx(dmrs_0.01_smooth, "./Output/DMRs_0.01_smooth.xlsx")
 # get dmrs_smooth from excel
 library(readxl)
 dmrs_smooth <- read_excel("./Output/8-DMRs_0.01_smooth.xlsx")
-View(dmrs_smooth) 
+head(dmrs_smooth) 
 ```
 
 
 
-# 1. DMRs no smoothing ########################
-## 1 Bind with cpgs DMR2 
+# create boxplots for DMRs (with smoothing) ########################
+## 1 bind to cpps DMR1 smooth
 ```{r}
 # Binding to annotation table to get cpgs infos:
-cpgs_DMR2_chr13 <- annotated_with_betas_df[annotated_with_betas_df$chr == "chr13" & 
-                       annotated_with_betas_df$pos >= DMRs_b100$start[2]& 
-                       annotated_with_betas_df$pos <= DMRs_b100$end[2], ]
-View(cpgs_DMR2_chr13)
-```
-
-## 1 creating a table ready for boxplots of all cpgs in one DMR
-```{r}
-library(dplyr)
-library(tidyr)
-library(ggplot2)
-library(plotly)
-library(htmlwidgets)
-
-
-beta_long <- cpgs_DMR2_chr13 %>%
-  rowwise() %>%
-  pivot_longer(
-    cols = 43:50,  # Selecting beta value columns
-    names_to = "SampleID",
-    values_to = "BetaValue"
-  ) %>%
-  mutate(
-    Group = pheno[match(SampleID, colnames(cpgs_DMR2_chr13)[43:50])],  # Match sample to Group
-    Position = rep(cpgs_DMR2_chr13$pos, each = length(43:50)),
-    CpGName = rownames(cpgs_DMR2_chr13)[rep(1:nrow(cpgs_DMR2_chr13), each = length(43:50))]  # Extract CpG names from rownames
-  ) %>%
-  ungroup() %>%
-  select(Position, SampleID, BetaValue, Group, CpGName)  # Select desired columns
-
-# 0rder the cpgs according to pos
-beta_long<- beta_long[order(beta_long$Position, decreasing = FALSE), ]
-
-beta_long <- beta_long %>%
-  mutate(PositionLabel = paste(paste0("pos. ", Position), CpGName, sep = "\n"))  # Combine position and CpGName
-
-View(beta_long)
-```
-
-
-## 1 Boxplots of cpgs in one DMR
-```{r}
-# Basic Boxplot with Dotted Lines from Whiskers to Outliers
-p <- ggplot(beta_long, aes(x = factor(PositionLabel), y = BetaValue, fill = Group)) +
-  geom_boxplot(outlier.shape = NA) +  # Remove default outlier points
-  geom_jitter(aes(color = Group, text = SampleID), width = 0.2, height = 0, shape = 16) +  # Add outlier points manually
-  theme_minimal() +
-  scale_fill_manual(values = c("guided" = "blue", "unguided" = "red")) +  # Custom colors
-  labs(x = "CPG + Position on Chr13", y = "Beta Value", fill = "Group") +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
-
-p
-
-# interactive boxplot
-interactive_plot <- ggplotly(p, tooltip = "text")  # Use 'text' to show the SampleID when hovering
-
-# Save the interactive plot as an HTML file
-saveWidget(interactive_plot, "interactive_boxplot_DMR2.html")
-```
-
-
-
-
-
-
-
-
-# 2. DMRs with smoothing ########################
-## 2 bind to cpps DMR1 smooth
-```{r}
-# Binding to annotation table to get cpgs infos:
-cpgs_DMR1 <- annotation_0.01_df[annotation_0.01_df$chr == "chr13" & 
-                       annotation_0.01_df$pos >= dmrs_smooth$start[1]& 
-                       annotation_0.01_df$pos <= dmrs_smooth$end[1], ]
+cpgs_DMR1 <- annotation_df[annotation_df$chr == "chr13" & 
+                       annotation_df$pos >= dmrs_smooth$start[1]& 
+                       annotation_df$pos <= dmrs_smooth$end[1], ]
 View(cpgs_DMR1)
 ```
-
-
 ## 2 get dmp table
 ```{r}
 View(dmp)
@@ -288,23 +140,6 @@ library(readxl)
 dmp <- read_excel("./Output/7-DMPs_NoShrink_0,01.xlsx")
 View(dmp)
 ```
-
-
-## test ### test #### filter cpgs before DMRs/ bumphunter
-```{r}
-# Filter the DMP table to keep only rows where pval >= 0.05
-filtered0.05_dmp <- dmp[dmp$pval <= 0.05, ]
-dim(filtered0.05_dmp) #40541     6
-############### bullshit
-
-#bumphunter
-## End Test ---> DIDNT WORK
-```
-
-
-
-
-
 
 ## 3 Add columns (pval, beta and M differnces) to the cpgs_DMR1 
 ```{r}
@@ -322,8 +157,8 @@ cpgs_DMR1$M_Difference <- cpgs_DMR1_pval$M_difference
 View(cpgs_DMR1)
 ```
 
-# DMR1
-## a-create a table for boxplot of cpgs in one DMR1  
+## 4  DMR1 boxplot
+### a-create a table for boxplot of cpgs in one DMR1  
 ```{r}
 # create the box plot table
 library(dplyr)
@@ -337,10 +172,9 @@ writexl::write_xlsx(cpgs_DMR1_for_boxplot, "./Output/cpgs_in_DMR1_forBoxplots.xl
 ```
 
 
-## b-  creating a long format table ready for boxplots of all cpgs in one DMR
+### b-  creating a long format table ready for boxplots of all cpgs in one DMR
 ```{r}
 library(tidyr)
-
 beta_long_smooth <- cpgs_DMR1_for_boxplot %>%
   rowwise() %>%
   pivot_longer(
@@ -373,12 +207,9 @@ View(beta_long_smooth)
 writexl::write_xlsx(beta_long_smooth, "./Output/longformat_cpgs_in_DMR1_forBoxplots.xlsx")
 ```
 
-
-
-
-# 2 basic interactive Boxplots of cpgs in one DMR
+### c basic interactive Boxplots of cpgs in one DMR
 ```{r}
-p2 <- ggplot(beta_long_smooth, aes(x = factor(PositionLabel), y = BetaValue, fill = Group)) +
+p2 <- ggplot(long_DMR1, aes(x = factor(PositionLabel), y = BetaValue, fill = Group)) +
   geom_boxplot(outlier.shape = NA) +  # Remove default outlier points
   geom_jitter(aes(color = Group, text = SampleID), width = 0.2, height = 0, shape = 16) +  # Add outlier points manually
   theme_minimal() +
@@ -391,7 +222,7 @@ interactive_plot2 <- ggplotly(p2)
 interactive_plot2
 ```
 
-# 2 interactiv boxplots: position on chr related  # PositionLabel oben
+### d interactiv boxplots: position on chr related  # PositionLabel oben
 ```{r}
 # P3: distanz zwischen Boxes ist abhängig von echte Distanz 
 p3 <- ggplot(beta_long_smooth, aes(x = Position, y = BetaValue, fill = Group)) +
@@ -415,7 +246,7 @@ interactive_plot3
 
 
 
-#2 interactiv boxplots: position on chr related
+### e interactiv boxplots: position on chr related
 ```{r}
 # P4: PositionLabel interaktiv
 p4 <- ggplot(beta_long_smooth, aes(x = Position, y = BetaValue, fill = Group)) +
@@ -433,4 +264,184 @@ interactive_plot4
 
 # Save the interactive plot as an HTML file
 saveWidget(interactive_plot4, "interactive_boxplot_DMR2_smooth_pval_4.html")
-```  
+```
+
+
+
+
+
+
+# create boxplots (with functios for shiny app)
+## 1- extract_cpgs_in_DMR function: it creates a table of cpgs in each DMR for Boxplots
+```{r}
+extract_cpgs_in_DMR <- function(DMRx, DMR_table, annotation_with_betas, pheno_data) {
+  # Step 1: Check table availability
+  if (missing(DMRx)) return("Error: 'DMRx' is missing.")
+
+  # Step 2: Check if DMRx exists in DMR_table
+  if (!(DMRx %in% DMR_table$DMR_Nr)) {
+    return(paste("Error:", DMRx, "not found in DMR_table"))
+  }
+
+  # Step 3: Get start, end, chr
+  DMR_row <- DMR_table[DMR_table$DMR_Nr == DMRx, ]
+  chr <- DMR_row$chr
+  start <- DMR_row$start
+  end <- DMR_row$end
+
+  # Step 4: Identify number of arrays/samples
+  m <- nrow(pheno_data)
+  # Get beta values from the last m columns
+  beta_cols <- tail(colnames(annotation_with_betas), m)
+
+
+  # step 5: Filter annotation_with_betas for CpGs in DMR region
+  region_cpgs <- annotation_with_betas[
+    annotation_with_betas$chr == chr & 
+    annotation_with_betas$pos >= start & 
+    annotation_with_betas$pos <= end,
+    c("chr", "pos", beta_cols)
+  ]
+
+  if (nrow(region_cpgs) == 0) {
+    return("No CpGs found in the specified DMR region.")
+  }
+
+  # Step 5: Return or plot boxplot-ready data
+  return(region_cpgs)
+}
+
+
+
+# USING THE FUNCTION
+#pheno_data <- pData(ratio_geno_Swan_NoSNP)
+#annotated_with_betas
+#dmrs_tbl
+
+cpgs_DMR1 <- extract_cpgs_in_DMR("1",dmrs_df ,annotated_with_betas, pheno_data)
+cpgs_DMR1
+```
+
+## 2- function: it creates a long format of the previous table
+```{r}
+library(tidyr)
+library(dplyr)
+
+
+reshape_to_long_beta <- function(region_cpgs, pheno_data) {
+  # Step 1: Input checks
+  if (missing(region_cpgs)) return("Error: 'region_cpgs' table is not available.")
+  if (missing(pheno_data)) return("Error: 'pheno_data' table is not available.")
+  
+  # Convert region_cpgs to a data.frame (if it's not already)
+  region_cpgs_df <- as.data.frame(region_cpgs)
+  colnames(region_cpgs_df) = colnames(region_cpgs)
+  pheno_df <- as.data.frame(pheno_data)
+
+
+  # Step 2: Identify sample number
+  m <- nrow(pheno_df)
+
+  # Step 3: Identify beta value columns (last m columns)
+  beta_cols <- tail(colnames(region_cpgs_df), m)
+
+  # Step 4: Validate that beta values are numeric and in range [0, 1]
+  beta_values <- region_cpgs_df[, beta_cols]
+  if (!all(sapply(beta_values, is.numeric))) {
+    return("Error: Not all beta columns are numeric.")
+  }
+  if (any(beta_values < 0 | beta_values > 1, na.rm = TRUE)) {
+    return("Error: Some beta values are outside the range [0, 1].")
+  }
+
+  # Step 5: Ensure that 'chr' column exists in region_cpgs
+  if (!"chr" %in% colnames(region_cpgs_df)) {
+    return("Error: 'chr' column is missing in region_cpgs.")
+  }
+
+  # Step 6: Sort region_cpgs by position
+  region_cpgs_df <- region_cpgs_df[order(region_cpgs_df$pos), ]
+
+  # Step 7: Create long-format table
+  beta_long <- region_cpgs_df %>%
+    pivot_longer(
+      cols = all_of(beta_cols),
+      names_to = "SampleID",
+      values_to = "BetaValue"
+    ) %>%
+    mutate(
+      chr = rep(region_cpgs_df$chr, each = m) ,
+      Position = rep(region_cpgs_df$pos, each = m),
+      CpGName = rep(rownames(region_cpgs_df), each = m),
+      Group = pheno_df$Sample_Group[match(gsub("^X", "", SampleID), rownames(pheno_df))]
+    ) %>%
+    ungroup() %>%
+    select(chr, Position, CpGName, SampleID, Group, BetaValue) %>%
+    mutate(PositionLabel = paste(CpGName, "\n", "pos=", Position))
+
+  return(beta_long)
+}
+
+
+
+
+#try function:
+long_DMR1 <- reshape_to_long_beta(cpgs_DMR1, pheno_data)
+View(long_DMR1)
+```
+
+## 3- function of boxplots
+```{r}
+#library(ggplot2)
+#library(plotly)
+# Define the function
+create_boxplot <- function(long_format_table, interactive = FALSE, use_positional_spacing = FALSE) {
+  if (length(unique(long_format_table$chr)) != 1) {
+    stop("Error: Not all CpGs are on one chromosome.")
+  }
+
+  # Correct x-axis variable name as string
+  x_col <- if (use_positional_spacing) "Position" else "PositionLabel"
+  
+  # Define text aesthetics for tooltips
+  long_format_table$text <- if (interactive) {
+    if (use_positional_spacing) {
+      paste0(long_format_table$SampleID, "\n", long_format_table$PositionLabel)
+    } else {
+      long_format_table$SampleID
+    }
+  } else {
+    long_format_table$SampleID  # You still need a column, even if it's ignored
+  }
+
+  p <- ggplot(long_format_table, aes_string(x = x_col, y = "BetaValue", fill = "Group")) +
+    geom_boxplot(
+                 aes_string(group = "interaction(Position, Group)", color = "Group"),
+                 outlier.shape = NA, color = "black", lwd = 0.3) +
+    theme_minimal() +
+    scale_fill_manual(values = c("guided" = "red", "unguided" = "blue")) +
+    labs(
+      x = if (use_positional_spacing) paste("Position on", unique(long_format_table$chr)) else paste("CPG + Position on", unique(long_format_table$chr)),
+      y = "Beta Value",
+      fill = "Group"
+    ) +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+  if (interactive) {
+  p <- suppressWarnings(
+    p + geom_jitter(aes_string(color = "Group", text = "text"), width = 0.2, height = 0, shape = 16)
+  )
+  return(plotly::ggplotly(p, tooltip = "text"))
+} else {
+  p <- suppressWarnings(
+    p + geom_jitter(aes_string(color = "Group"), width = 0.2, height = 0, shape = 16) 
+  )
+  return(p)
+  }
+}
+create_boxplot(long_DMR1, interactive = TRUE, use_positional_spacing = TRUE)
+```
+
+
+
+
