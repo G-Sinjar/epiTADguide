@@ -28,12 +28,12 @@
 #print(sample_names)
 
 #libraries
-library(minfi)
-library("IlluminaHumanMethylationEPICv2manifest")
-library(IlluminaHumanMethylationEPICv2anno.20a1.hg38)
-library(shiny)
-library(bslib)
-library(shinyjs)
+#library(minfi)
+#library("IlluminaHumanMethylationEPICv2manifest")
+#library(IlluminaHumanMethylationEPICv2anno.20a1.hg38)
+#library(shiny)
+#library(bslib)
+#library(shinyjs)
 #library(ggplot2)
 
 ui <- page_navbar(
@@ -77,19 +77,24 @@ ui <- page_navbar(
                                "Plot 4: Beta distribution (Badenwanne)" = "plot4",
                                "Plot 5: Bean Plot" = "plot5"
                              ),
-                             selected = "plot1")
+                             selected = "plot1"),
+                br(),
+                downloadButton("download_qc_report", "Download QC Report"),
+                helpText("Generating the report may take a moment. Once ready, a dialog will prompt you to choose the download location.")
               ),
               
               # Main panel changes based on selected plot
               uiOutput("qc_plot_ui")
-            )
+            ),
+            
+            
+            
   )
 )
 
 server <- function(input, output, session) {
   # Initial status message
   status <- reactiveVal("ℹ️ Waiting to enter the path to data from sequencer.")
-  
   output$load_status <- renderUI({
     HTML(gsub("\n", "<br>", status()))
   })
@@ -99,16 +104,31 @@ server <- function(input, output, session) {
 
     # Reset status
     status("🔄 Starting data load...")
-
     output$load_status <- renderUI({
       HTML(gsub("\n", "<br>", status()))
     })
 
-    # Normalize path
+    # Normalize and check path
     RawDataDir <- gsub("\\\\", "/", input$dir_path)
+    if (!dir.exists(RawDataDir)) {
+      status(paste0("❌ Directory does not exist: ", RawDataDir))
+      output$load_status <- renderUI({
+        HTML(gsub("\n", "<br>", status()))
+      })
+      return(NULL)
+    }
 
-  # Step 1: Read Sample Sheet
+    
+# Step 1: Read Sample Sheet
     status(paste(status(), "\nStep 1: Reading Sample Sheet..."))
+    
+    # List CSV files in the directory
+    csv_files <- list.files(RawDataDir, pattern = "\\.csv$", full.names = TRUE)
+    
+    if (length(csv_files) == 0) {
+      status(paste(status(), "\n❌ No sample sheet CSV file found in the selected directory. Please check the path and try again."))
+      return(NULL)
+    }
     
     targets <- tryCatch({
       read.metharray.sheet(RawDataDir)
@@ -123,7 +143,9 @@ server <- function(input, output, session) {
     if (is.null(targets)) return()
     status(paste(status(), "\n✅ Sample Sheet loaded."))
 
-  # Step 2: Load IDAT files
+    
+    
+# Step 2: Load IDAT files
     status(paste(status(), "\nStep 2: Loading IDAT files..."))
     
     RGset <<- tryCatch({
@@ -139,7 +161,9 @@ server <- function(input, output, session) {
     if (is.null(RGset)) return()
     status(paste(status(), "\n✅ IDAT files loaded."))
 
-  # Step 3: Get Manifest
+    
+    
+# Step 3: Get Manifest
     status(paste(status(), "\nStep 3: Getting array manifest info..."))
     
     manifest <- tryCatch({
@@ -153,8 +177,10 @@ server <- function(input, output, session) {
     output$manifest_output <- renderPrint({ manifest })
     status(paste(status(), "\n✅ Manifest info retrieved."))
 
-  # Step 4: Preprocess
-    status(paste(status(), "\nStep 4: Converting to locus-level data..."))
+    
+    
+# Step 4: Preprocess
+    status(paste(status(), "\nStep 4: Converting signal data to locus-level data..."))
     
     raw_normalised <<- tryCatch({
       preprocessRaw(RGset)
@@ -217,9 +243,72 @@ server <- function(input, output, session) {
            )
     )
   })
+
+  output$plot1 <- renderPlot({
+      req(RGset)  # Make sure RGset is available
+      plot(density(as.vector(assay(RGset, "Red"))), main = "Channel Intensities", lwd = 2) 
+      lines(density(as.vector(assay(RGset, "Green"))), col = "green", lwd = 2)
+      legend("topright", legend = c("Red Channel", "Green Channel"), col = c("black", "green"), lwd = 2)
+    }) 
+    
+  output$plot2 <- renderPlot({
+      req(RGset)  # Make sure RGset is available
+      req(raw_normalised)
+      qc <- getQC(raw_normalised)
+      raw_normalised <- addQC(raw_normalised, qc)
+      plotQC(qc)
+    }) 
+    
+  output$plot3 <- renderPlot({
+      req(RGset)
+      req(targets)
+      mdsPlot(RGset, sampNames = targets$Array, sampGroups = targets$Sample_Group ,main = "Raw Beta MDS", legendNCol = 1, legendPos = "topright")
+    })
+    
+  output$plot4 <- renderPlot({
+      req(RGset)
+      req(targets)
+      densityPlot(RGset, sampGroups = targets$Sample_Label, main ="Beta values distribution of raw data", xlab = "Beta values")
+    })
+    
+  output$plot5 <- renderPlot({
+      req(RGset)
+      req(targets)
+      par(mar = c(5, 6, 4, 2)) # Bottom, left, top, right margins (default is c(5, 4, 4, 2))
+      densityBeanPlot(RGset, sampGroups = targets$Sample_Label, sampNames = targets$Sample_Name)
+    })
+  
+  output$download_qc_report <- downloadHandler(
+      filename = function() {
+        paste0("qcReport_", Sys.Date(), ".pdf")
+      },
+      content = function(file) {
+        # Ensure RGset and targets exist and have required columns!
+        req(exists("RGset", envir = .GlobalEnv) || !is.null(RGset))
+        req(exists("targets", envir = .GlobalEnv) || !is.null(targets))
+        # Use tryCatch for robust error handling
+        tryCatch({
+          qcReport(
+            RGset,
+            sampNames = targets$Sample_Name,
+            sampGroups = targets$Sample_Group0,
+            pdf = file
+          )
+        }, error = function(e) {
+          # Write error to file if something goes wrong
+          pdf(file)
+          plot.new()
+          text(0.5, 0.5, paste("Error generating QC report:", e$message), cex = 1.5)
+          dev.off()
+        })
+      }
+    )
+    
 }  
 
-
+# note:
+#req("") will stop execution if the argument is empty or missing, but will not show an error message to the use.
+#Use validate(need(...)) if you want to display a message in the UI.
 
 
 shinyApp(ui, server)
