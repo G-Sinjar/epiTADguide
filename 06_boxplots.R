@@ -1,12 +1,16 @@
-#library(shiny)
-#library(shinyWidgets)  # This is required for switchInput
-#library(bslib)
-#library(htmlwidgets)
+library(shiny)
+library(shinyWidgets)  # This is required for switchInput
+library(bslib)
+library(htmlwidgets)
+library(ggplot2)
+library(plotly)
+library(tidyr)
+library(dplyr)
 
 # inputs:
 #dmrs_tbl
 #annotated_with_betas
-#pheno_data <- pData(ratio_geno_Swan_NoSNP)
+pheno_data <- pData(ratio_geno_Swan_NoSNP)
 
 # functions:
 # 1- region_cpgs        <-  extract_cpgs_in_DMR(DMRx, DMR_table, annotation_with_betas, pheno_data)

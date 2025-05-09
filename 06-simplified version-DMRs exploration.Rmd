@@ -392,8 +392,8 @@ View(long_DMR1)
 
 ## 3- function of boxplots
 ```{r}
-#library(ggplot2)
-#library(plotly)
+library(ggplot2)
+library(plotly)
 # Define the function
 create_boxplot <- function(long_format_table, interactive = FALSE, use_positional_spacing = FALSE) {
   if (length(unique(long_format_table$chr)) != 1) {
