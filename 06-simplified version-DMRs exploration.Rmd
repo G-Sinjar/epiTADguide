@@ -26,17 +26,19 @@ library(dplyr)
 
 # Preparing for bumhunter
 ```{r}
+ratio_geno_Swan_NoSNP <- readRDS("./intermediate_data/filtered_GRset_SWAN_SNP_removed_SexChr_kept_20250605.rds")
+
 # 1. Define the phenotype of interest
 pheno <- pData(ratio_geno_Swan_NoSNP)$Sample_Group
 # 2. Change the reference level to "unguided" so the value is minus on chr13 target
 if (!is.factor(pheno)) {
-  pheno <- factor(pheno)
+  pheno_factor <- factor(pheno)
 }
-pheno <- relevel(pheno, ref = "unguided")
+pheno_factor <- relevel(pheno_factor, ref = "unguided")
 
 
 # 3. designMatrix
-designMatrix <- model.matrix(~ pheno)
+designMatrix <- model.matrix(~ pheno_factor)
 ```
 
 
@@ -56,71 +58,233 @@ View(dmrs2$table)
 ```{r}
 library(doParallel)
 registerDoParallel(cores = 6)
-dmrs <- bumphunter(ratio_geno_Swan_NoSNP, design = designMatrix, cutoff = 0.15, B=0, type="Beta", smooth = TRUE) 
+dmrs <- bumphunter(ratio_geno_Swan_NoSNP, design = designMatrix, cutoff = 0.15, B=100, type="Beta", smooth = TRUE) 
 View(dmrs$table) # info u get pvalue only of B>0
 #0,2 B=0 --> 1dmr chr6
 #0,15 B=0 --> 16 DMR
 #0,15 B=100 --> 16 DMR
 ```
 
-# function: Editing the DMR table
+# 1. bumphunter function
 ```{r}
-edit_dmr_table <- function(dmrs) {
-  DMRtable <- dmrs$table
-  
-  # Add length column 
-  DMRtable$length <- DMRtable$end - DMRtable$start
-  
-  # Order by length
-  DMRtable <- DMRtable[order(DMRtable$length, decreasing = TRUE), ]
-  
-  # Add DMR_Nr
-  DMRtable$DMR_Nr <- paste0("DMR", seq_len(nrow(DMRtable)))
-  
-  # Round numeric columns, but keep whole numbers as integers
-  num_cols <- sapply(DMRtable, is.numeric)  # Identify numeric columns
-  
-  DMRtable[num_cols] <- lapply(DMRtable[num_cols], function(x) {
-    if (all(x == floor(x))) {  # Check if all values are whole numbers
-      return(as.integer(x))    # Keep them as integers
-    } else {
-      return(round(x, 5))      # Otherwise, round to 5 decimal places
-    }
+run_bumphunter_dmrs <- function(rgSet, cutoff = 0.15, B = 0) {
+  # Extract phenotype data
+  pd <- tryCatch({
+    pData(rgSet)
+  }, error = function(e) {
+    stop(paste("Error extracting phenotype data:", e$message))
   })
   
-  DMRtable <- DMRtable %>% rename(mean.methy.difference = value,
-                                  CpGs.inDMR = L,
-                                  CpGs.inCluster = clusterL)
+  if (!"Sample_Group" %in% colnames(pd)) {
+    stop("Column 'Sample_Group' not found in phenotype data.")
+  }
   
-  # Reorder columns safely
-  desired_cols <- c("DMR_Nr", "chr", "start", "end", "length", 
-                    "mean.methy.difference", "CpGs.inDMR", 
-                    "CpGs.inCluster", "p.value", "fwer")
-  available_cols <- names(DMRtable)
-  column_order <- c(
-    desired_cols[desired_cols %in% available_cols],
-    setdiff(available_cols, desired_cols)
-  )
+  # Prepare phenotype factor
+  sample_group <- pd$Sample_Group
+  if (!is.factor(sample_group)) sample_group <- factor(sample_group)
+  sample_group <- relevel(sample_group, ref = "unguided")
   
-  DMRtable <- DMRtable[, column_order, drop = FALSE]
-  return(DMRtable)
+  # Create design matrix
+  designMatrix <- model.matrix(~ sample_group)
+  
+  # Set up parallel backend
+  if (!requireNamespace("doParallel", quietly = TRUE)) {
+    stop("Package 'doParallel' is required for parallel execution.")
+  }
+  doParallel::registerDoParallel(cores = 6)
+  
+  # Run bumphunter with error handling
+  dmrs <- tryCatch({
+    bumphunter(
+      rgSet,
+      design = designMatrix,
+      coef = 2,
+      cutoff = cutoff,
+      B = B,
+      type = "Beta",
+      smooth = TRUE
+    )
+  }, error = function(e) {
+    warning(paste("Error during bumphunter execution:", e$message))
+    return(NULL)
+  })
+  
+  # If bumphunter failed
+  if (is.null(dmrs)) {
+    return(NULL)
+  }
+  
+  # Convert to data frame
+  dmrs_tbl <- as.data.frame(dmrs$table)
+  rownames(dmrs_tbl) <- NULL
+  
+  return(list(
+    DMR_table = dmrs_tbl,
+    pd = pd
+  ))
 }
 
-dmrs_tbl <- edit_dmr_table(dmrs)
+
+# test the finction
+dmrs_a <- run_bumphunter_dmrs(rgSet = ratio_geno_Swan_NoSNP,cutoff = c(-0.15, 0.15), B = 0)
+pheno <- dmrs_a$pd
+dmrtable <- dmrs_a$DMR_table
 ```
+
+
+# 2. prepare_dmrs_granges()
+```{r}
+
+library(GenomicRanges)
+library(dplyr)
+library(tibble)
+
+prepare_dmrs_granges <- function(dmrs_df) {
+  # Convert to GRanges
+  gr <- makeGRangesFromDataFrame(
+    df = dmrs_df,
+    seqnames.field = "chr",
+    start.field = "start",
+    end.field = "end",
+    keep.extra.columns = TRUE
+  )
+
+  # Safely rename metadata columns if they exist
+  if ("value" %in% names(mcols(gr))) {
+    names(mcols(gr))[names(mcols(gr)) == "value"] <- "mean.methy.difference"
+  }
+  if ("L" %in% names(mcols(gr))) {
+    names(mcols(gr))[names(mcols(gr)) == "L"] <- "CpGs.inDMR"
+  }
+  if ("clusterL" %in% names(mcols(gr))) {
+    names(mcols(gr))[names(mcols(gr)) == "clusterL"] <- "CpGs.inCluster"
+  }
+
+  # Add width column
+  mcols(gr)$width <- width(gr)
+
+  # Sort by CpGs.inDMR if present
+  if ("CpGs.inDMR" %in% names(mcols(gr))) {
+    gr <- gr[order(gr$CpGs.inDMR, decreasing = TRUE)]
+  }
+
+  # Reorder metadata columns if they exist
+  all_cols <- names(mcols(gr))
+  desired_cols <- c("width", "mean.methy.difference", "CpGs.inDMR", "p.value", "cluster", "CpGs.inCluster")
+  cols_to_select <- desired_cols[desired_cols %in% all_cols]
+
+  reordered_mcols <- mcols(gr) %>%
+    as_tibble() %>%
+    select(any_of(cols_to_select), everything())
+
+  # Round numeric (non-integer) columns to 5 digits
+  is_roundable <- sapply(reordered_mcols, function(x) {
+    is.numeric(x) && !all(x == floor(x), na.rm = TRUE)  # True for decimals, not pure integers
+  })
+
+  reordered_mcols[is_roundable] <- lapply(reordered_mcols[is_roundable], function(x) round(x, 5))
+
+  # Convert back to DataFrame and set as mcols
+  mcols(gr) <- as(reordered_mcols, "DataFrame")
+
+  return(gr)
+}
+
+
+
+#Test function:
+library(readxl)
+dmrs <- read_excel("./Output/8-DMRs_0.01_smooth.xlsx")
+dmrs 
+
+D <- prepare_dmrs_granges(dmrs_df = dmrs)
+#D
+```
+
+
+# Annotate DMRs
+```{r}
+annotate_dmrs_with_genes <- function(GR_Dmrs, tx_gr_filtered) {
+  # -------------------- STEP 1: FIRST GENE NAME --------------------
+  hits_first <- findOverlaps(GR_Dmrs, tx_gr_filtered, ignore.strand = TRUE, select = "first")
+  first_gene_names <- tx_gr_filtered$gene_name[hits_first]
+  mcols(GR_Dmrs)$overlapped_gene_name <- first_gene_names
+  
+  # -------------------- STEP 2: CONCATENATED GENE NAMES --------------------
+  hits_all <- findOverlaps(GR_Dmrs, tx_gr_filtered, ignore.strand = TRUE)
+  overlapping_gene_names_list <- split(tx_gr_filtered$gene_name[subjectHits(hits_all)],
+                                       queryHits(hits_all))
+  
+  concatenated_gene_names_vector <- sapply(overlapping_gene_names_list, paste, collapse = ";")
+  all_concat_names <- rep(NA_character_, length(GR_Dmrs))
+  all_concat_names[as.integer(names(concatenated_gene_names_vector))] <- concatenated_gene_names_vector
+  mcols(GR_Dmrs)$concatenated_gene_names <- all_concat_names
+  
+  # -------------------- STEP 3: UNIQUE DMR IDs --------------------
+  hits_df <- data.frame(
+    DMR_idx = queryHits(hits_all),
+    Gene_idx = subjectHits(hits_all)
+  )
+  
+  gene_info_df <- tx_gr_filtered[subjectHits(hits_all)] %>%
+    as.data.frame() %>%
+    select(gene_name)
+  
+  hits_df <- cbind(hits_df, gene_info_df)
+  
+  dmr_info <- as.data.frame(GR_Dmrs) %>%
+    select(seqnames) %>%
+    mutate(DMR_idx = seq_len(length(GR_Dmrs)))
+  
+  dmr_gene_df <- left_join(dmr_info, hits_df, by = "DMR_idx") %>%
+    mutate(gene_name = ifelse(is.na(gene_name), "NoGene", gene_name)) %>%
+    group_by(DMR_idx) %>%
+    summarize(
+      Chromosome = first(seqnames),
+      Gene_names = paste(unique(gene_name), collapse = ";"),
+      .groups = "drop"
+    )
+  
+  dmr_gene_df$Base_ID <- paste0(dmr_gene_df$Gene_names, ".DMR")
+  
+  # Ensure uniqueness by appending suffixes
+  id_counts <- table(dmr_gene_df$Base_ID)
+  suffixes <- rep("", nrow(dmr_gene_df))
+  
+  for (id in unique(dmr_gene_df$Base_ID)) {
+    matches <- which(dmr_gene_df$Base_ID == id)
+    if (length(matches) > 1) {
+      suffixes[matches] <- paste0("-", seq_along(matches))
+    }
+  }
+  
+  dmr_gene_df$DMR_ID <- paste0(dmr_gene_df$Base_ID, suffixes)
+  
+  # Add DMR_ID to GRanges object
+  DMR_IDs <- rep(NA_character_, length(GR_Dmrs))
+  DMR_IDs[dmr_gene_df$DMR_idx] <- dmr_gene_df$DMR_ID
+  mcols(GR_Dmrs)$DMR_ID <- DMR_IDs
+  
+  return(GR_Dmrs)
+}
+
+
+#Test function
+D_annotated <- annotate_dmrs_with_genes(D, tx_gr_filtered)
+D_annotated
+```
+
 
 # save/ get DMR table
 ```{r}
-writexl::write_xlsx(dmrs_0.01_smooth, "./Output/DMRs_0.01_smooth.xlsx")
-
+GR_Dmrs_df <- as.data.frame(GR_Dmrs)
+#writexl::write_xlsx(GR_Dmrs_df, "./Output/8_DMRs_0.01_smooth_GRange.xlsx")
 
 # get dmrs_smooth from excel
 library(readxl)
 dmrs_smooth <- read_excel("./Output/8-DMRs_0.01_smooth.xlsx")
 head(dmrs_smooth) 
 ```
-
-
 
 # create boxplots for DMRs (with smoothing) ########################
 ## 1 bind to cpps DMR1 smooth
@@ -156,7 +320,6 @@ cpgs_DMR1$M_Difference <- cpgs_DMR1_pval$M_difference
 
 View(cpgs_DMR1)
 ```
-
 ## 4  DMR1 boxplot
 ### a-create a table for boxplot of cpgs in one DMR1  
 ```{r}
@@ -271,35 +434,52 @@ saveWidget(interactive_plot4, "interactive_boxplot_DMR2_smooth_pval_4.html")
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
 # create boxplots (with functios for shiny app)
 ## 1- extract_cpgs_in_DMR function: it creates a table of cpgs in each DMR for Boxplots
 ```{r}
-extract_cpgs_in_DMR <- function(DMRx, DMR_table, annotation_with_betas, pheno_data) {
-  # Step 1: Check table availability
+extract_cpgs_in_DMR <- function(DMRx, DMR_table, annotated_table, pheno) {
+  # Step 1: Check input
   if (missing(DMRx)) return("Error: 'DMRx' is missing.")
-
-  # Step 2: Check if DMRx exists in DMR_table
-  if (!(DMRx %in% DMR_table$DMR_Nr)) {
-    return(paste("Error:", DMRx, "not found in DMR_table"))
+  if (is.null(annotated_table)) {
+    return("Error: annotated_table is missing.")
+  }
+  if (is.null(pheno)) {
+    return("Error: phenotype data (pheno) is missing.")
   }
 
-  # Step 3: Get start, end, chr
-  DMR_row <- DMR_table[DMR_table$DMR_Nr == DMRx, ]
+  # Step 2: Check if DMRx exists
+  if (!(DMRx %in% DMR_table$DMR_ID)) {
+    return(paste("Error:", DMRx, "not found in DMR table"))
+  }
+
+  # Step 3: Extract DMR region info
+  DMR_row <- DMR_table[DMR_table$DMR_ID == DMRx, ]
   chr <- DMR_row$chr
   start <- DMR_row$start
   end <- DMR_row$end
 
-  # Step 4: Identify number of arrays/samples
-  m <- nrow(pheno_data)
-  # Get beta values from the last m columns
-  beta_cols <- tail(colnames(annotation_with_betas), m)
+  # Step 4: Get beta columns using pheno
+  m <- length(pheno)
+  beta_cols <- tail(colnames(annotated_table), m)
 
-
-  # step 5: Filter annotation_with_betas for CpGs in DMR region
-  region_cpgs <- annotation_with_betas[
-    annotation_with_betas$chr == chr & 
-    annotation_with_betas$pos >= start & 
-    annotation_with_betas$pos <= end,
+  # Step 5: Subset annotation table for CpGs in the DMR
+  region_cpgs <- annotated_table[
+    annotated_table$chr == chr &
+      annotated_table$pos >= start &
+      annotated_table$pos <= end,
     c("chr", "pos", beta_cols)
   ]
 
@@ -307,18 +487,24 @@ extract_cpgs_in_DMR <- function(DMRx, DMR_table, annotation_with_betas, pheno_da
     return("No CpGs found in the specified DMR region.")
   }
 
-  # Step 5: Return or plot boxplot-ready data
   return(region_cpgs)
 }
 
 
 
 # USING THE FUNCTION
-#pheno_data <- pData(ratio_geno_Swan_NoSNP)
-#annotated_with_betas
-#dmrs_tbl
 
-cpgs_DMR1 <- extract_cpgs_in_DMR("1",dmrs_df ,annotated_with_betas, pheno_data)
+#annotation_results <- readRDS("./modules/intermediate_data/annotated_object_20250623.rds")
+#annotated_tbl <- annotation_results$annotated_table 
+
+#dmr_results <- readRDS("./modules/intermediate_data/DMRs_cutoff_neg0.15_to_0.15_B0_2025-06-23.rds")
+#dmr_tbl <-  dmr_results$dmr_table
+
+#pheno <- dmr_results$pheno_data
+
+#DMRx <- "CLDN10.DMR"
+
+cpgs_DMR1 <- extract_cpgs_in_DMR(DMRx, dmr_tbl, annotated_tbl, pheno)
 cpgs_DMR1
 ```
 
@@ -329,65 +515,65 @@ library(dplyr)
 
 
 reshape_to_long_beta <- function(region_cpgs, pheno_data) {
-  # Step 1: Input checks
-  if (missing(region_cpgs)) return("Error: 'region_cpgs' table is not available.")
-  if (missing(pheno_data)) return("Error: 'pheno_data' table is not available.")
+  # Input validation checks
+  if (missing(region_cpgs)) stop("Error: 'region_cpgs' table is missing")
+  if (missing(pheno_data)) stop("Error: 'pheno_data' table is missing")
   
-  # Convert region_cpgs to a data.frame (if it's not already)
+  # Convert to data frames
   region_cpgs_df <- as.data.frame(region_cpgs)
-  colnames(region_cpgs_df) = colnames(region_cpgs)
   pheno_df <- as.data.frame(pheno_data)
+  
+  # Column validation
+  required_cols <- c("chr", "pos")
+  if (!all(required_cols %in% colnames(region_cpgs_df))) {
+    stop("Missing required columns in region_cpgs: 'chr' and/or 'pos'")
+  }
+  if (!"Sample_Group" %in% colnames(pheno_df)) {
+    stop("Missing 'Sample_Group' column in pheno_data")
+  }
 
-
-  # Step 2: Identify sample number
+  # Sample handling
   m <- nrow(pheno_df)
-
-  # Step 3: Identify beta value columns (last m columns)
   beta_cols <- tail(colnames(region_cpgs_df), m)
-
-  # Step 4: Validate that beta values are numeric and in range [0, 1]
-  beta_values <- region_cpgs_df[, beta_cols]
-  if (!all(sapply(beta_values, is.numeric))) {
-    return("Error: Not all beta columns are numeric.")
+  
+  # Beta value validation
+  beta_values <- region_cpgs_df[, beta_cols, drop = FALSE]
+  if (!all(vapply(beta_values, is.numeric, logical(1)))) {
+    stop("Non-numeric values found in beta columns")
   }
   if (any(beta_values < 0 | beta_values > 1, na.rm = TRUE)) {
-    return("Error: Some beta values are outside the range [0, 1].")
+    stop("Beta values outside [0,1] range detected")
   }
 
-  # Step 5: Ensure that 'chr' column exists in region_cpgs
-  if (!"chr" %in% colnames(region_cpgs_df)) {
-    return("Error: 'chr' column is missing in region_cpgs.")
+  # Create CpG identifier
+  if (!"CpGName" %in% colnames(region_cpgs_df)) {
+    region_cpgs_df$CpGName <- rownames(region_cpgs_df)
   }
 
-  # Step 6: Sort region_cpgs by position
-  region_cpgs_df <- region_cpgs_df[order(region_cpgs_df$pos), ]
-
-  # Step 7: Create long-format table
-  beta_long <- region_cpgs_df %>%
-    pivot_longer(
-      cols = all_of(beta_cols),
-      names_to = "SampleID",
-      values_to = "BetaValue"
-    ) %>%
-    mutate(
-      chr = rep(region_cpgs_df$chr, each = m) ,
-      Position = rep(region_cpgs_df$pos, each = m),
-      CpGName = rep(rownames(region_cpgs_df), each = m),
-      Group = pheno_df$Sample_Group[match(gsub("^X", "", SampleID), rownames(pheno_df))]
-    ) %>%
-    ungroup() %>%
-    select(chr, Position, CpGName, SampleID, Group, BetaValue) %>%
-    mutate(PositionLabel = paste(CpGName, "\n", "pos=", Position))
-
-  return(beta_long)
+  # Core processing pipeline
+  region_cpgs_df %>%
+  dplyr::arrange(.data$pos) %>%
+  tidyr::pivot_longer(
+    cols = all_of(beta_cols),
+    names_to = "SampleID",
+    values_to = "BetaValue"
+  ) %>%
+  dplyr::mutate(
+    SampleID = gsub("^X", "", SampleID),  # X am Anfang entfernen!
+    Group = pheno_df$Sample_Group[match(SampleID, rownames(pheno_df))],
+    PositionLabel = paste(.data$CpGName, "\npos=", .data$pos)
+  ) %>%
+  dplyr::select(
+    "chr", "pos", "CpGName", "SampleID", "Group", "BetaValue", "PositionLabel"
+  )
 }
 
 
-
-
 #try function:
-long_DMR1 <- reshape_to_long_beta(cpgs_DMR1, pheno_data)
-View(long_DMR1)
+# from the previous fuction test
+# pheno
+long_DMR1 <- reshape_to_long_beta(cpgs_DMR1, pheno)
+head(long_DMR1)
 ```
 
 ## 3- function of boxplots
@@ -401,7 +587,7 @@ create_boxplot <- function(long_format_table, interactive = FALSE, use_positiona
   }
 
   # Correct x-axis variable name as string
-  x_col <- if (use_positional_spacing) "Position" else "PositionLabel"
+  x_col <- if (use_positional_spacing) "pos" else "PositionLabel"
   
   # Define text aesthetics for tooltips
   long_format_table$text <- if (interactive) {
@@ -416,7 +602,7 @@ create_boxplot <- function(long_format_table, interactive = FALSE, use_positiona
 
   p <- ggplot(long_format_table, aes_string(x = x_col, y = "BetaValue", fill = "Group")) +
     geom_boxplot(
-                 aes_string(group = "interaction(Position, Group)", color = "Group"),
+                 aes_string(group = "interaction(pos, Group)", color = "Group"),
                  outlier.shape = NA, color = "black", lwd = 0.3) +
     theme_minimal() +
     scale_fill_manual(values = c("guided" = "red", "unguided" = "blue")) +
@@ -439,9 +625,9 @@ create_boxplot <- function(long_format_table, interactive = FALSE, use_positiona
   return(p)
   }
 }
-create_boxplot(long_DMR1, interactive = TRUE, use_positional_spacing = TRUE)
-```
+create_boxplot(long_DMR1, interactive = TRUE, use_positional_spacing = FALSE)
 
+```
 
 
 

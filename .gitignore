@@ -1,4 +1,5 @@
 *.html
+.RDataTmp*
 not needed test code.Rmd
 Output/
 Plots/

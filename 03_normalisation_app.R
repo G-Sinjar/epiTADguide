@@ -1,5 +1,5 @@
 # Inputs
-#load -> RGset, raw_normalised
+#load -> RGset, raw_normalised, targets
 
 '# Values to store the normalized data
 SWAN_normalised <- NULL

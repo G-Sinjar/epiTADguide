@@ -23,133 +23,186 @@ library(dplyr)
 library(readxl)
 library(readr)
 library(GenomeInfoDb)
+library(stringr)
 ```
 
-# get 6 tables in R of the 6 offspoter txt results
+# function to read and combine offspotter results
 ```{r}
-library(readr)
+'library(readr)
+library(dplyr) 
+library(stringr) '
 
-# Function to read guide files and assign custom column names
-read_guide_files <- function(file_path, num_guides) {
-  # Define column names
-  col_names <- c("Chrom", "Strand", "Start", "End", "Given query", "Actual genomic hit", 
-                 "Number of mismatches", "Pre-mRNA (Unspliced)", "mRNA (5UTR)", 
-                 "mRNA (CDS)", "mRAN (3UTR)", "lincRNA (Unspliced)", 
-                 "lincRNA (Spliced)", "guide")
-  
-  # Loop through all guide files (from guide1.txt to guideN.txt)
-  for (i in 1:num_guides) {
-    # Construct the file path for each guide
-    guide_file <- paste0(file_path, "/guide", i, ".txt")
-    
-    # Read each guide file
-    guide_data <- read_delim(guide_file, delim = "\t", col_names = FALSE, show_col_types = FALSE)
-    
-    # Assign custom column names
-    colnames(guide_data) <- col_names
-    
-    # Add a new column to indicate which guide it is
-    guide_data$guide <- paste0("guide", i)
-    
-     # Add new columns: Start + 70 and End - 70
-    guide_data$Start_minus_70 <- guide_data$Start - 70
-    guide_data$End_plus_70 <- guide_data$End + 70
-    
-    # Assign the data to a variable with dynamic names
-    assign(paste0("guide", i), guide_data, envir = .GlobalEnv)
+read_guide_files <- function(directory_path, guide_file_names) {
+  captured_output <- list(messages = character(), warnings = character(), errors = character())
+  append_output <- function(type, msg) {
+    captured_output[[type]] <<- c(captured_output[[type]], msg)
   }
-}
-
-# try functionin 
-# Path to the offspotter result folder
-offspoter_result_path <- "C:/Users/ghaza/Documents/ghazal/Bioinformatik_Fächer/Masterarbeit_Project/Results/offspotter_results"
-
-# Ask the user for the number of guides
-num_guides <- 6
-
-# Run the function to read and assign data to guide1, guide2, ..., guideN
-read_guide_files(offspoter_result_path, num_guides)
-
-head(guide3)
-View(guide2)
-```
-
-# or combined offspotter results
-```{r}
-read_guide_files <- function(file_path, num_guides) {
-  # Define column names
-  col_names <- c("Chrom", "Strand", "Start", "End", "Given query", "Actual genomic hit", 
-                 "Number_of_mismatches", "Pre-mRNA (Unspliced)", "mRNA (5UTR)", 
-                 "mRNA (CDS)", "mRAN (3UTR)", "lincRNA (Unspliced)", 
-                 "lincRNA (Spliced)", "guide")
   
-  # Initialize an empty list to store all guide data
+  col_names <- c("Chrom", "Strand", "Start", "End", "Given query", "Actual genomic hit",
+                 "Number_of_mismatches", "Pre-mRNA (Unspliced)", "mRNA (5UTR)",
+                 "mRNA (CDS)", "mRAN (3UTR)", "lincRNA (Unspliced)",
+                 "lincRNA (Spliced)", "GC content")
+  
   all_guides <- list()
   
-  # Loop through all guide files (from guide1.txt to guideN.txt)
-  for (i in 1:num_guides) {
-    # Construct the file path for each guide
-    guide_file <- paste0(file_path, "/guide", i, ".txt")
+  for (file_name in guide_file_names) {
+    full_file_path <- file.path(directory_path, file_name)
+    append_output("messages", paste("Processing file:", full_file_path))
     
-    # Read each guide file
-    guide_data <- readr::read_delim(guide_file, delim = "\t", col_names = FALSE, show_col_types = FALSE)
+    guide_data <- tryCatch(
+      {
+        read_delim(full_file_path, delim = "\t", col_names = FALSE, show_col_types = FALSE)
+      },
+      error = function(e) {
+        err_msg <- paste("Critical Error in reading a file: '", full_file_path, "'. Reason: ", e$message, sep = "")
+        append_output("errors", err_msg)
+        return(NULL)
+      }
+    )
+    if (is.null(guide_data)) next
     
-    # Assign custom column names
-    colnames(guide_data) <- col_names
+    if (ncol(guide_data) != length(col_names)) {
+      err_msg <- paste("Critical Error: File '", full_file_path, "' has ", ncol(guide_data),
+                       " columns, but ", length(col_names), " columns were expected.", sep = "")
+      append_output("errors", err_msg)
+      next
+    }
     
-    # Add a new column to indicate which guide it is
-    guide_data$guide <- paste0("guide", i)
+    processed_guide_data <- tryCatch(
+      {
+        colnames(guide_data) <- col_names
+        
+        # Remove unwanted column
+        guide_data <- guide_data[, !(colnames(guide_data) %in% "GC content")]
+        
+        # Guide name
+        guide_name_for_col <- tools::file_path_sans_ext(file_name)
+        guide_data$guide <- guide_name_for_col
+        
+        # Compute and clean numeric columns
+        guide_data$Start <- as.integer(guide_data$Start)
+        guide_data$End <- as.integer(guide_data$End)
+        guide_data$Start_minus_70 <- guide_data$Start - 70
+        guide_data$End_plus_70 <- guide_data$End + 70
+        guide_data$Start_minus_70 <- as.integer(guide_data$Start_minus_70)
+        guide_data$End_plus_70 <- as.integer(guide_data$End_plus_70)
+        guide_data$Number_of_mismatches <- as.integer(guide_data$Number_of_mismatches)
+        
+        guide_data
+      },
+      error = function(e) {
+        err_msg <- paste("Critical Error: Problem with initial data processing for file '", full_file_path,
+                         "'. Check column names or data structure. Reason: ", e$message, sep = "")
+        append_output("errors", err_msg)
+        return(NULL)
+      }
+    )
+    if (is.null(processed_guide_data)) next
     
-    # Add new columns: Start - 70 and End + 70
-    guide_data$Start_minus_70 <- guide_data$Start - 70
-    guide_data$End_plus_70 <- guide_data$End + 70
-    
-    # Append the current guide data to the list
-    all_guides[[i]] <- guide_data
+    all_guides[[file_name]] <- processed_guide_data
   }
   
-  # Combine all guide tables into one large data frame
-  combined_guides <- dplyr::bind_rows(all_guides)
+  if (length(all_guides) == 0) {
+    append_output("errors", "No guide files were successfully processed. Please check paths, file names and contents.")
+    return(list(data = NULL, output = captured_output))
+  }
   
-  # !!! USE dplyr::filter !!!
-  just_offtargets <- combined_guides %>%
-    dplyr::filter(`Number_of_mismatches` != 0)
+  combined_guides <- tryCatch(
+    {
+      bind_rows(all_guides)
+    },
+    error = function(e) {
+      err_msg <- paste("Critical Error: Failed to combine all guide tables. Reason: ", e$message, sep = "")
+      append_output("errors", err_msg)
+      return(NULL)
+    }
+  )
+  if (is.null(combined_guides)) {
+    return(list(data = NULL, output = captured_output))
+  }
   
-  return(just_offtargets)
+  just_offtargets <- tryCatch(
+    {
+      combined_guides %>%
+        filter(`Number_of_mismatches` != 0) %>%
+        mutate(
+          guide_num = str_extract(guide, "(?i)guide([[:alnum:]]+)", group = 1),
+          ID = paste0("G", guide_num, ".M", `Number_of_mismatches`, ".chr", Chrom, "_", Start)
+        ) %>%
+        select(-guide_num)
+    },
+    error = function(e) {
+      err_msg <- paste("Critical Error: Failed during off-target filtering or ID generation. Reason: ", e$message, sep = "")
+      append_output("errors", err_msg)
+      return(NULL)
+    }
+  )
+  if (is.null(just_offtargets)) {
+    return(list(data = NULL, output = captured_output))
+  }
+  
+  final_data <- tryCatch(
+    {
+      just_offtargets %>%
+        select(
+          ID,
+          guide,
+          Chrom,
+          Start,
+          End,
+          Number_of_mismatches,
+          Start_minus_70,
+          End_plus_70,
+          everything()
+        )
+    },
+    error = function(e) {
+      err_msg <- paste("Critical Error: Failed during final column reordering. Reason: ", e$message, sep = "")
+      append_output("errors", err_msg)
+      return(NULL)
+    }
+  )
+  if (is.null(final_data)) {
+    return(list(data = NULL, output = captured_output))
+  }
+  
+  append_output("messages", "Finished processing all guide files successfully.")
+  return(list(data = final_data, output = captured_output))
 }
+
 ```
 
 
-# Path to the offspotter result folder
+# Test function: Path to the offspotter result folder
 ```{r}
 offspoter_result_path <- "C:/Users/ghaza/Documents/ghazal/Bioinformatik_Fächer/Masterarbeit_Project/Results/offspotter_results"
 
 # Read in all the guides (assuming 6 guides)
-num_guides <- 6
-combined_Offspotter_guideResults <- read_guide_files(offspoter_result_path, num_guides)
+combined_Offspotter_guideResults <- read_guide_files(offspoter_result_path, c("guide1.txt", "guide2.txt", "guide3.txt", "guide4.txt", "guide5.txt", "guide6.txt"))
 
-
-
-View(combined_Offspotter_guideResults)
+View(combined_Offspotter_guideResults$data)
 ```
-
 
 
 # convert to a GRange
 ```{r}
-# Create the GRanges object and keep all the extra columns as metadata
+#from above of from this csv file
+combined_Offspotter_guideResults <- read.csv("./Output/offtargets_2025-05-21_newIDs.csv", header = TRUE)
+
+
 gr_offtargets <- GRanges(
   seqnames = combined_Offspotter_guideResults$Chrom,
   ranges = IRanges(
     start = combined_Offspotter_guideResults$Start_minus_70,
     end = combined_Offspotter_guideResults$End_plus_70
-  ),
-  #strand = combined_Offspotter_guideResults$Strand,
-  # Add all other columns as metadata
-  mcols = combined_Offspotter_guideResults[, !(colnames(combined_Offspotter_guideResults) %in% c("Chrom", "Strand", "Start_minus_70", "End_plus_70"))]
+  )
 )
+mcols(gr_offtargets) <- combined_Offspotter_guideResults[, !(colnames(combined_Offspotter_guideResults) %in% c("Chrom", "Strand", "Start_minus_70", "End_plus_70"))]
 seqlevelsStyle(gr_offtargets) <- "UCSC"
-gr_offtargets
+
+gr_offtargets 
+
+mcols(gr_offtargets)
 ```
 
 # is DMR2-chr7 near offtarget? --> case2 --> no

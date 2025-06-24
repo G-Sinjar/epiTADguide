@@ -86,9 +86,6 @@ ui <- page_navbar(
               # Main panel changes based on selected plot
               uiOutput("qc_plot_ui")
             ),
-            
-            
-            
   )
 )
 

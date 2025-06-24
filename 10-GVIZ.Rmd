@@ -26,6 +26,7 @@ library(dplyr)
 library(GenomicRanges)
 library(Gviz)
 library(shiny)
+library(bslib)
 library(EnsDb.Hsapiens.v86)
 library(GenomeInfoDb)
 ```
@@ -44,7 +45,7 @@ chr <- "chr13"
 itrack <- IdeogramTrack(genome = genome, chromosome = chr)
 gtrack <- GenomeAxisTrack()
 
-plotTracks(list(itrack,gtrack), showBandId = TRUE, cex.bands = 0.7,from = from, to = to)
+#plotTracks(list(itrack,gtrack), showBandId = TRUE, cex.bands = 0.7,from = from, to = to)
 ```
 
 
@@ -52,8 +53,8 @@ plotTracks(list(itrack,gtrack), showBandId = TRUE, cex.bands = 0.7,from = from, 
 ## 1b -CpGs track
 ```{r}
 # a- get the final table for all cpgs
-cpgs <- read_excel("./Output/10-cpgs_for_Granges.xlsx",col_names = TRUE)
-#dim(cpgs)
+#cpgs <- read_excel("./Output/10-cpgs_for_Granges.xlsx",col_names = TRUE) #891492     23
+#head(cpgs)
 
 # b- convert to genomicRanges
 gr_cpgs <- GRanges(seqnames = cpgs$chr,
@@ -62,20 +63,107 @@ mcols(gr_cpgs) <- cpgs[, 4:ncol(cpgs)]
 #gr_cpgs
 
 
-##### please replace the GenType from the beginneing in the dmp pipeline
-# Define the colors for GenType
-#fill_colors <- c("Other"= "lightblue" ,"CLDN10_IsoA" = "blue", "Targeted_CpG" = "red", "CLDN10_IsoB" = "green")
+# --- Define P-value Ranges and Corresponding Colors ---
+legend_labels <- c("p≤0.001", "0.001<p≤0.01", "0.01<p≤0.05", "0.05<p≤0.1", "p>0.1")
+p_value_ranges <- c(0, 0.001, 0.01, 0.05, 0.1, 1)
+p_value_colors <- c(
+  "#0b2b5b",  # Midnight Blue
+  "#3f007d",  # Royal Purple
+  "#084c61",  # Deep Teal
+  "#6a5acd",  # Slate Blue
+  "#9ebcda"   # Steel Blue
+)
 
-# Create AnnotationTrack with CpGs
-sondentrack <- AnnotationTrack(gr_cpgs, chromosome = chr, genome = genome , name = "CpG Probes", 
-                          col = NA,       # Border color
-                          #fill = fill_colors[gr_cpgs_AB$GenType], 
-                          id = gr_cpgs$CpGs,
-                          feature = gr_cpgs$GenType)  
+'p_value_colors <- c(
+  "#08306b",  # navy (very significant)
+  "#2171b5",  # royal blue
+  "#6baed6",  # sky blue
+  "#bdd7e7",  # light blue
+  "#deebf7"   # very light blue (not significant)
+)
 
-# Create the plot
-#plotTracks(list(itrack, gtrack, sondentrack), from = from, to = to, showBandId = TRUE,cex.bands = 0.7, "Other"= "lightblue", "CLDN10_IsoA" = "blue", "Targeted_CpG" = "red", "CLDN10_IsoB" = "green",stacking = "dense")
+p_value_colors <- c(
+  "#54278f",  # very significant (dark purple)
+  "#2b8cbe",  # significant (blue)
+  "#41ab5d",  # moderate (teal/green)
+  "#fdb863",  # weakly significant (orange)
+  "#d73027"   # not significant (red)
+)'
+
+gr_cpgs$color_group <- p_value_colors[findInterval(gr_cpgs$pval, p_value_ranges)]
+
+# -------- reorder the columns-------
+# Get current column names
+cols <- colnames(mcols(gr_cpgs))
+# Find position to insert: before last 8 columns
+insert_pos <- length(cols) - 9
+# Remove 'color_group' temporarily if already present
+cols <- setdiff(cols, "color_group")
+# New column order: insert 'color_group' before last 8
+new_order <- append(cols, "color_group", after = insert_pos)
+# Reassign mcols in new order
+mcols(gr_cpgs) <- mcols(gr_cpgs)[, new_order]
+gr_cpgs
+
+
+# Create the AnnotationTrack
+sondentrack <- AnnotationTrack(gr_cpgs, 
+                         chromosome = chr,
+                         genome = genome,
+                         name = "CpG Probes",
+                         col = NA,
+                         fill = gr_cpgs$color_group,
+                         id = gr_cpgs$CpGs,
+                         showFeatureId = FALSE)
+
+
+# --- Create the plot ---
+plotTracks(list(itrack, gtrack, sondentrack),
+           chromosome = chr,
+           from = from,
+           to = to,
+           showBandId = TRUE,
+           cex.bands = 0.7,
+           stacking = "dense")
 ```
+
+## 1 legend label --> not sinvoll cause a full plot
+```{r}
+# Dynamisch berechnete Breite
+plot_width <- to - from
+box_width <- round(plot_width * 0.125)  # 10% der Plotlänge
+
+legend_positions <- GRanges(seqnames = chr,
+                            ranges = IRanges(start = from + seq(0, by = box_width * 1.5, length.out = length(legend_labels)),
+                                             width = box_width),
+                            feature = legend_labels)
+
+
+legend_track <- AnnotationTrack(
+  legend_positions,
+  name = "Legende",
+  genome = genome,
+  chromosome = chr,
+  feature = legend_labels,
+  group = legend_labels,
+  fill = p_value_colors,
+  col = NA,
+  showFeatureId = TRUE,
+  cex.feature = 0.8              # Schriftgröße der Labels
+  )
+
+plotTracks(list(itrack, gtrack, legend_track, sondentrack),
+           chromosome = chr,
+           from = from,
+           to = to,
+           stacking = "dense",
+           showBandId = TRUE,
+           cex.bands = 0.7
+           )
+
+```
+
+
 
 ## 1G -CPG Islands track
 ```{r}
@@ -131,44 +219,50 @@ cpgIslandTrack <- AnnotationTrack(gr_cpgIslands,
 
 ## 1E -DMR track
 ```{r}
-##### change the DMRnR FROM THE BEGINNING IN THE THE PIPELINE
-DMRs <- read_excel("./Output/8-DMRs_0.01_smooth.xlsx", col_names = TRUE)
+DMRs <- read_excel("./Output/8_DMRs_0.01_smooth_GRange.xlsx", col_names = TRUE)
 
-DMRs$DMR_Nr <- paste("DMR", DMRs$DMR_Nr, sep = "")
-
-#View(DMRs)
-
-# check if all numbers are numeric
-DMRs <- DMRs %>%
-  mutate(across(c(start, end, length, p.value), as.numeric))
+head(DMRs)
 
 # create a granges of the DMRs 
-gr_Dmrs <- GRanges(
-  seqnames = DMRs$chr,  
-  ranges = IRanges(start = DMRs$start, end = DMRs$end),
-  feature = DMRs$DMR_Nr,
-  p.value = DMRs$p.value
+# Ensure DMRs is a data.frame (it can still be a tibble)
+dmrs_gr <- makeGRangesFromDataFrame(
+  df = DMRs,
+  seqnames.field = "chr",
+  start.field = "start",
+  end.field = "end",
+  strand.field = "strand",  # optional if strand column exists
+  keep.extra.columns = TRUE
 )
-#gr_Dmrs
+# Convert to numeric if needed
+dmrs_gr$p.value <- as.numeric(as.character(dmrs_gr$p.value))
+
+# Now build the track
+DmrTrack <- AnnotationTrack(
+  dmrs_gr,
+  genome = genome,
+  chromosome = chr,
+  name = "DMRs",
+  col = "orange",
+  fill = "orange",
+  feature = paste(dmrs_gr$DMR_ID, " P.val=", round(dmrs_gr$p.value, 5))
+)
 
 
-DmrTrack <- AnnotationTrack(gr_Dmrs,genome = genome ,chromosome = chr, name = "DMRs", col = "pink", fill = "pink",feature = paste(gr_Dmrs$feature, " P.val=", round(gr_Dmrs$p.value, 5))) # delete pvalue if he dmr table is filtered
-
-#plotTracks(DmrTrack,from = from, to = to, groupAnnotation= "feature")
+plotTracks(DmrTrack,from = from, to = to, groupAnnotation= "feature")
 ```
 
 
 ## 1  -Offtarget track
 ```{r}
 # the granges of the offtarget is from script 11 
-#gr_offtargets
+gr_offtargets
 
 #pos on chr13 wo offtarget gibt
-von = 113103059
+von = 113102059
 zu =113104000
 
 offtargetTrack <- AnnotationTrack(gr_offtargets, genome = genome, chromosome = chr,
-                                  name = "potential Off-targets\n[-70,+70]", feature = paste(gr_offtargets$mcols.guide, "\n", gr_offtargets$mcols.Number_of_mismatches, "mismatches"), col= NA,fill = "red")
+                                  name = "potential Off-targets\n[-70,+70]", feature = gr_offtargets$ID, col= NA,fill = "red")
 
 plotTracks(offtargetTrack, chromosome = "chr13", from = von, to= zu, groupAnnotation ="feature", fontcolor.group= "black")
 ```
@@ -187,8 +281,7 @@ betaTrack <- DataTrack(gr_cpgs, chromosome = chr, genome = genome,
                     name = "Beta values",
                     data = beta_values)
  
-#plotTracks(betaTrack, groups = rep(c("unguided", "guided"), each = 4),
-#           type = c("a", "p"), from = from , to = to) # or with aggregate aggregateGroups = TRUE, aggregation = "mean"
+#plotTracks(betaTrack, groups = rep(c("unguided", "guided"), each = 4),type = c("a", "p"), from = from , to = to) # or with aggregate aggregateGroups = TRUE, aggregation = "mean"
 ```
 
 
@@ -234,6 +327,7 @@ plotTracks(reGenTrack, from= from , to= to)
 #cant pack gene, transcript and exon infos in one granges and plot gene cause it is will be replicated according to the numner of transcripts/ exons bzw.rows
 
 # Get EnsDb
+library(EnsDb.Hsapiens.v86)
 edb <- EnsDb.Hsapiens.v86
 options(ucscChromosomeNames = TRUE)
 
@@ -241,12 +335,15 @@ options(ucscChromosomeNames = TRUE)
 ######################### Get gene ranges
 tx_gr <- genes(edb)
 #length(tx_gr) # 63970
-#head(tx_gr)
+head(tx_gr)
 
 # Filter to standard chromosomes only????
 tx_gr_filtered <- keepSeqlevels(tx_gr, standardChromosomes(tx_gr), pruning.mode = "coarse")
 #length(tx_gr_filtered) #58650
 #tx_gr_filtered
+seqlevelsStyle(tx_gr_filtered) <- "UCSC"
+#tx_gr_filtered
+
 
 #h <- GeneRegionTrack(tx_gr_filtered, chromosome = chr, name = "gene/transcript", transcriptAnnotation = "gene_name" ) 
 #plotTracks(h, from = from, to = to) # but i dont get the shön shape only boxes
@@ -277,7 +374,7 @@ transTrack <- AnnotationTrack(transcript_tx_gr_filt,
                           name = "Gene Ens",
                           id= transcript_tx_gr_filt$tx_id)
 
-plotTracks(transTrack, from = from, to = to, groupAnnotation= "id", just.group= "above")
+#plotTracks(transTrack, from = from, to = to, groupAnnotation= "id", just.group= "above")
 ```
 
 
@@ -305,9 +402,9 @@ gr_SUBTADs
 
 ### plot tad track
 SUBTadTrack <- AnnotationTrack(gr_SUBTADs, genome = genome, 
-                            name = paste0("SUBTADs\nCaki2\n",binsize, "kb"), col= "black", fill="lightyellow")
+                            name = paste0("SUBTADs\nCaki2\n",binsize, "kb"), col= "black", fill="pink")
 
-#plotTracks(SUBTadTrack, from = from, to = to) # try to change shape 
+plotTracks(SUBTadTrack, from = from, to = to) # try to change shape 
 ```
 
 
@@ -335,7 +432,7 @@ mcols(gr_TADs) <- TADs[, 1]
 TadTrack <- AnnotationTrack(gr_TADs , genome = genome, 
                             name = paste0("TADs\nCaki2\n",binsize, "kb"), 
                             feature = gr_TADs$TadNr,  
-                            col = "black", fill= "orange")
+                            col = "black", fill= "purple")
 
 #plotTracks(TadTrack, featureAnnotation = "feature", fontcolor.feature = "darkblue",from = from, to = to) # try to change shape 
 ```
@@ -411,13 +508,15 @@ plotTracks(TadTrack_skin_25kb,groupAnnotation = "feature", from = from, to = to)
 plotGvizTracks <- function(from, to){
     displayPars(DmrTrack) <- list(groupAnnotation = "feature")  
     displayPars(cpgIslandTrack) <- list(groupAnnotation = "feature") 
-    displayPars(sondentrack) <- list(stacking= "dense") 
+    displayPars(sondentrack) <- list(stacking= "dense",showFeatureId = FALSE) 
     displayPars(geneTrack) <- list(featureAnnotation= "id",fontcolor.feature = "darkblue") 
     displayPars(offtargetTrack) <- list(groupAnnotation ="feature", fontcolor.group= "black") 
-    displayPars(TadTrack) <- list(featureAnnotation= "feature",fontcolor.feature = "darkblue") 
+    displayPars(geneTrack) <- list(  featureAnnotation = "id", fontcolor.feature = "black", stacking = "full", cex = 0.7)
 
 
-    plotTracks(list(itrack, gtrack, sondentrack,cpgIslandTrack, DmrTrack, offtargetTrack,dTrack,geneTrack,SUBTadTrack,TadTrack),#ensTransTrack
+
+
+    plotTracks(list(itrack, gtrack,sondentrack,cpgIslandTrack, DmrTrack, offtargetTrack,betaTrack,geneTrack,SUBTadTrack,TadTrack),#ensTransTrack #
     from = from, to = to,
     showBandId = TRUE, cex.bands = 0.7,
     groups = rep(c("unguided", "guided"), each = 4),type = c("a", "p"),
@@ -425,90 +524,213 @@ plotGvizTracks <- function(from, to){
     cex.group = 0.9,
     cex.legend = 0.9,
     cex.title = 0.75 , # size of the track names
-    col.title = "black",
-    "Other" = "lightblue",
-    "CLDN10_IsoA" = "blue",
-    "Targeted_CpG" = "red",
-    "CLDN10_IsoB" = "green"
+    col.title = "black"
     )
 }
-
-
-# save as a PDF file
-#pdf("./Plots/GVIZ_CLDN10_AB_14_subtad25kb.pdf", width = 27, height = 15)  # dimensions in inches
-#plotGvizTracks(95433599, 95579759)
-#dev.off() 
 ```
 
 
 
-# shiny app
+# shiny app:
 ```{r}
-# Example ranges for DMRs (replace with your actual ones)
-dmr_ranges <- list(
-  DMR1 = c(95433599, 95579759),
+'dmr_ranges <- list(
+  CLDN10 = c(95433599, 95579759),
+  DMR1 = c(95552350,95553081),
+  DMR16 = c(22735536,  22737536),
   TAD28 = c(94625000, 97850000), 
   SubTAD65 = c(94550000, 95875000),
-  offtarget_g2 = c(113103059, 113106500),
+  offtarget_g2 = c(113102059, 113104059),
   offtarget_g5 = c(110956200, 110958900)
-
-)
-
+)'
 
 chr13_length <- 114364328
 
-ui <- fluidPage(
-  titlePanel("Interactive Gviz Plot"),
-  sidebarLayout(
-    sidebarPanel( width = 2,
-      selectInput("dmr", "Choose DMR:", choices = names(dmr_ranges), selected = "DMR1"),
-      #sliderInput("range", "Genomic Range on chr13:",min = 1, max = chr13_length,value = dmr_ranges[["DMR1"]],step = 25000)
-      numericInput("from", "From:", value = dmr_ranges[["DMR1"]][1], min = 1, max = chr13_length),
-      numericInput("to", "To:", value = dmr_ranges[["DMR1"]][2], min = 1, max = chr13_length),
-      helpText("Note: The boundaries of TADs and sub-TADs are approximate and depend on the resolution of the TAD-calling algorithm. The resolution used is indicated in the name of the TAD and sub-TAD tracks."),
-      actionButton("update", "Submit"),
-      br(), br(), br(),
-      downloadButton("downloadPlot", "Save Plot as PDF")
-    ),
-    mainPanel( width= 10,
+ui <- page_navbar(
+  title = "EPIC Array Pipeline",
+  theme = bs_theme(version = 5, bootswatch = "flatly"),
+  
+  nav_panel("Final Plot",
+    layout_sidebar(
+      sidebar = sidebar(
+        width = 300,
+        
+        selectInput("region_type", "Choose Region Type:",
+            choices = c("DMRs", "Off-targets"), selected ="DMRs"),
+        uiOutput("region_selector"),
+        numericInput("from", "From:", 
+                    value = dmr_ranges[["DMR1"]][1], 
+                    min = 1, max = chr13_length),
+        numericInput("to", "To:", 
+                    value = dmr_ranges[["DMR1"]][2], 
+                    min = 1, max = chr13_length),
+        tags$div(style = "font-size: 15px; color: #555;",
+                  helpText("Note: The boundaries of TADs and sub-TADs are approximate and depend on the resolution of the TAD-calling algorithm. The resolution                   used is indicated in the name of the TAD and sub-TAD tracks.")
+        ),
+        
+        actionButton("update", "Submit", class = "btn-primary"),
+        div(
+          actionButton("zoom_in", "🔍 Zoom In", class = "btn btn-success btn-sm"),
+          actionButton("zoom_out", "🔎 Zoom Out", class = "btn btn-warning btn-sm"),
+          br(), br(),
+          actionButton("go_left", "⬅️ Go Left", class = "btn btn-secondary btn-sm"),
+          actionButton("go_right", "➡️ Go Right", class = "btn btn-secondary btn-sm")
+        ),
+        
+        # Compact Legend directly below buttons
+        tags$div(
+          style = "font-size: 12px; margin-top: 10px;",
+          tags$strong("CpG track Legend (P-Values of CpGs):"),
+          br(),
+          lapply(seq_along(p_value_colors), function(i) {
+            div(style = "margin-bottom: 4px; display: flex; align-items: center;",
+                div(style = paste0("width:14px;height:14px;background-color:", p_value_colors[i],
+                                   ";margin-right:6px;border:1px solid black;flex-shrink:0;")),
+                span(style = "flex-grow:1;", legend_labels[i])
+            )
+          })
+        ),
+        
+        br(), downloadButton("downloadPlot", "Save Plot as PDF")
+      ),
       plotOutput("gvizPlot", height = "1000px")
-      
     )
   )
 )
 
-server <- function(input, output, session) {
-  selectedRange <- reactiveVal(dmr_ranges[["DMR1"]])
 
-  observeEvent(input$update, {
-    selectedRange(c(input$from, input$to))
+server <- function(input, output, session) {
+  pendingRange <- reactiveVal(c(NA, NA))
+  # Initial selected range based on default DMR
+  selectedRange <- reactiveVal(c(start(dmrs_gr[dmrs_gr$DMR_ID == "CLDN10.DMR"]),
+                                 end(dmrs_gr[dmrs_gr$DMR_ID == "CLDN10.DMR"])))
+
+  # Reactive UI for region ID dropdown
+  output$region_selector <- renderUI({
+    if (input$region_type == "DMRs") {
+      selectInput("region_id", "Choose DMR:", choices = dmrs_gr$DMR_ID)
+    } else {
+      selectizeInput("region_id", "Choose Off-target:", 
+                     choices = gr_offtargets$ID, 
+                     options = list(create = TRUE, placeholder = "Type or select Off-target ID"))
+    }
+  })
+
+  # Update from/to based on selected region
+  observeEvent(input$region_id, {
+  req(input$region_type, input$region_id)
+  
+  if (input$region_type == "DMRs") {
+    sel <- dmrs_gr[dmrs_gr$DMR_ID == input$region_id]
+  } else {
+    sel <- gr_offtargets[gr_offtargets$ID == input$region_id]
+  }
+
+  if (length(sel) == 1) {
+    pad <- 2000
+    new_from <- max(1, start(sel) - pad)
+    new_to <- min(chr13_length, end(sel) + pad)
+
+    # Save these values for later, but don't update UI yet
+    pendingRange(c(new_from, new_to))
+  } else {
+  showNotification("No matching region found for selected ID.", type = "warning")
+  }
 })
 
-  
-  # Update range input when DMR changes
-  observeEvent(input$dmr, {
-    updateNumericInput(session, "from", value = dmr_ranges[[input$dmr]][1])
-    updateNumericInput(session, "to", value = dmr_ranges[[input$dmr]][2])
-  })
 
-  # Main plot output
+
+  observeEvent(input$update, {
+  range_vals <- pendingRange()
+  if (!any(is.na(range_vals))) {
+    if (range_vals[1] >= range_vals[2]) {
+      showNotification("Invalid region: 'From' must be less than 'To'", type = "error")
+      return()
+    }
+    updateNumericInput(session, "from", value = range_vals[1])
+    updateNumericInput(session, "to", value = range_vals[2])
+    selectedRange(range_vals)
+    pendingRange(c(NA, NA))  # Reset pending state
+  } else {
+    if (input$from >= input$to) {
+      showNotification("Invalid range: 'From' must be less than 'To'", type = "error")
+      return()
+    }
+    selectedRange(c(input$from, input$to))
+  }
+})
+
+
+  observeEvent(input$region_type, {
+  pendingRange(c(NA, NA))
+  showNotification("Region type changed. Please select a new region and click Submit.", type = "message", duration = 3)
+})
+
+
+  # Plot rendering
   output$gvizPlot <- renderPlot({
-    req(selectedRange())
-    plotGvizTracks(selectedRange()[1], selectedRange()[2])
-  })
+  req(selectedRange())
+  from <- selectedRange()[1]
+  to <- selectedRange()[2]
 
-  # Download handler for PDF
+  # Validate: make sure range is legal
+  validate(
+    need(from < to, "'From' must be less than 'To'. Please correct the range and click Submit.")
+  )
+
+  plotGvizTracks(from, to)
+})
+
+
+  # Plot download
   output$downloadPlot <- downloadHandler(
     filename = function() {
       paste0("GvizPlot_chr13_", input$from, "_", input$to, ".pdf")
     },
     content = function(file) {
       pdf(file, width = 25, height = 15)
-      plotGvizTracks(as.numeric(input$from), as.numeric(input$to))
+      plotGvizTracks(input$from, input$to)
       dev.off()
     }
   )
+
+  # Zoom controls
+  zoomvalue <- 6000
+
+  observeEvent(input$zoom_in, {
+    new_from <- max(1, input$from + zoomvalue)
+    new_to <- min(chr13_length, input$to - zoomvalue)
+    updateNumericInput(session, "from", value = new_from)
+    updateNumericInput(session, "to", value = new_to)
+    selectedRange(c(new_from, new_to))
+  })
+
+  observeEvent(input$zoom_out, {
+    new_from <- input$from - zoomvalue
+    new_to <- input$to + zoomvalue
+    if (new_from < new_to) {
+      updateNumericInput(session, "from", value = new_from)
+      updateNumericInput(session, "to", value = new_to)
+      selectedRange(c(new_from, new_to))
+    }
+  })
+
+  observeEvent(input$go_left, {
+    new_from <- max(1, input$from - zoomvalue)
+    new_to <- max(1, input$to - zoomvalue)
+    updateNumericInput(session, "from", value = new_from)
+    updateNumericInput(session, "to", value = new_to)
+    selectedRange(c(new_from, new_to))
+  })
+
+  observeEvent(input$go_right, {
+    new_from <- min(chr13_length, input$from + zoomvalue)
+    new_to <- min(chr13_length, input$to + zoomvalue)
+    updateNumericInput(session, "from", value = new_from)
+    updateNumericInput(session, "to", value = new_to)
+    selectedRange(c(new_from, new_to))
+  })
 }
 
 shinyApp(ui, server)
 ```
+
