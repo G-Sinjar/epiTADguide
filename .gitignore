@@ -2,4 +2,26 @@
 not needed test code.Rmd
 Output/
 Plots/
+not needed test scripts/
 05--DMRcate-CLDN10_files/
+RGset_SWAN_normalised.RData
+ratio_geno_Swan_NoSNP.RData
+intermediate_data/
+modules/intermediate_data/
+modules/Output
+.RDataTmp
+.Rhistory
+
+# R and IDE temp files
+.RData
+.Rhistory
+.Rproj.user/
+.idea/
+modules/.RDataTmp
+modules/.Rhistory
+modules/intermediate_data/
+*.rds
+
+# System files
+.DS_Store
+Thumbs.db

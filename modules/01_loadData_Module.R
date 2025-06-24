@@ -198,15 +198,12 @@ loadDataServer <- function(id) {
 
 
 
-# test_loadDataApp.R
+'# test_loadDataApp.R
 
 library(shiny)
 library(bslib)
 library(minfi)
-library(IlluminaHumanMethylationEPICv2manifest)
-library(IlluminaHumanMethylationEPICv2anno.20a1.hg38)
 
-# UI
 ui <- page_navbar(
   title = "EPIC Array Pipeline",
   theme = bs_theme(version = 5, bootswatch = "flatly"),
@@ -216,11 +213,10 @@ ui <- page_navbar(
 )
 
 
-# Server
+
 server <- function(input, output, session) {
   loadDataServer("loader") 
   # other server code or modules
 }
 
-# Run the app
-shinyApp(ui, server)
+shinyApp(ui, server)'

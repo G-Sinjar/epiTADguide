@@ -13,23 +13,23 @@ qcUI <- function(id) {
   ns <- NS(id)
   
   page_sidebar(
-    title = "QC Plots",
-    
     # Sidebar with plot selection and download option
     sidebar = sidebar(
       width = 300,
       radioButtons(ns("qc_plot"), "Select QC Plot:",
                    choices = list(
                      "Plot 1: Channel Intensity" = "plot1",
-                     "Plot 2: Sample Reliability" = "plot2",
-                     "Plot 3: MDS plot (Sample PCA)" = "plot3",
-                     "Plot 4: Beta distribution (Badewanne)" = "plot4",
-                     "Plot 5: Bean Plot" = "plot5"
+                     "Plot 2: Sample-specific QC" = "plot2",
+                     "Plot 3: Multi-dimensional scaling (MDS) plot" = "plot3",
+                     "Plot 4: Beta value densities of the samples" = "plot4",
+                     "Plot 5: Bean plot of Beta values densities" = "plot5"
                    ),
                    selected = "plot1"),
-      br(),
+      radioButtons(ns("plot_format"), "Select Format:", choices = c("PDF" = "pdf", "PNG" = "png"), inline = TRUE),
+      downloadButton(ns("download_current_plot"), "Download Current Plot"),
+      hr(),
       downloadButton(ns("download_qc_report"), "Download QC Report"),
-      helpText("Generating the report may take a moment. Once ready, a dialog will prompt you to choose the download location.")
+      helpText("This button generates a comprehensive PDF report that compiles multiple standard QC plots into a single document. Note that some plots—such as control probe plots—are included only in the report and are not displayed interactively within the app. We recommend reviewing the report for a complete quality assessment.")
     ),
     
     # Main content panel for plots
@@ -54,35 +54,35 @@ qcServer <- function(id, RGset, raw_normalised, targets) {
              # Plot 1: Channel intensity
              "plot1" = tagList(
                h3("Channel Intensity"),
-               helpText("This plot shows the intensity distribution of the red and green channels across all samples."),
+               helpText("The Channel Intensity plot displays the density distribution of raw red and green channel fluorescence intensities across all samples. This visualization is crucial for rapidly identifying samples with aberrant overall signal levels, which could indicate issues such as poor hybridization, insufficient DNA input, or errors during array scanning."),
                plotOutput(ns("plot1"), height = "100vh")
              ),
              
-             # Plot 2: Sample reliability
+             # Plot 2: sample-specific QC
              "plot2" = tagList(
-               h3("Sample Reliability"),
-               helpText("Visualizes detection p-values to assess the reliability of each sample."),
+               h3("sample-specific QC"),
+               helpText("	This is a simple quality control plot that uses the log median intensity in both the methylated (M) and unmethylated (U) channels. When plotting these two medians against each other, it has been observed that good samples cluster together, while failed samples tend to separate and have lower median intensities."),
                plotOutput(ns("plot2"), height = "100vh")
              ),
              
              # Plot 3: MDS plot
              "plot3" = tagList(
-               h3("MDS Plot (Sample PCA)"),
-               helpText("Multidimensional scaling plot of raw beta values. Used to detect sample outliers and batch effects."),
+               h3("Multi-dimensional scaling (MDS) plot"),
+               helpText("Multi-dimensional scaling plot gives an overview of similarities and differences between samples using Euclidean distance."),
                plotOutput(ns("plot3"), height = "100vh")
              ),
              
-             # Plot 4: Beta distribution
+             # Plot 4: Beta value densities of the samples
              "plot4" = tagList(
-               h3("Beta Distribution (Badewanne)"),
-               helpText("Distribution of beta values for each sample, typically bimodal in shape."),
+               h3("Beta values densities of the samples"),
+               helpText("A Distribution of beta values for each sample. This plot helps assessing the overall methylation profile of a sample and identify potential problems.\nThis distribution is expected to be bimodal with the 2 peaks (around 0 and 1 beta values) representing methylated and unmethylated signals. Any center peaks should be further investigated (e.g. in Plot5) for problems."),
                plotOutput(ns("plot4"), height = "100vh")
              ),
              
-             # Plot 5: Bean plot
+             # Plot 5: Bean plot of Beta values densities
              "plot5" = tagList(
-               h3("Bean Plot"),
-               helpText("Displays the distribution and density of methylation beta values per sample group."),
+               h3("Bean plot of Beta values densities"),
+               helpText("Displays the density of beta values for each individual sample, with samples colored according to their respective experimental groups.\nthis granular view allows for the precise identification of individual samples exhibiting unusual or defective beta value distributions. Such deviations can indicate quality control issues at the single-sample level, necessitating further investigation or potential exclusion of affected samples from downstream analyses."),
                plotOutput(ns("plot5"), height = "100vh")
              )
       )
@@ -101,7 +101,7 @@ qcServer <- function(id, RGset, raw_normalised, targets) {
       })
     })
     
-    # Plot 2: QC plot (Sample reliability)
+    # Plot 2: sample-specific QC
     output$plot2 <- renderPlot({
       req(raw_normalised())
       withProgress(message = 'Generating Sample Reliability Plot...', value = 0, {
@@ -114,7 +114,7 @@ qcServer <- function(id, RGset, raw_normalised, targets) {
       })
     })
     
-    # Plot 3: MDS plot
+    # Plot 3: Multi-dimensional scaling (MDS) plot
     output$plot3 <- renderPlot({
       req(RGset(), targets())
       withProgress(message = 'Generating MDS Plot...', value = 0, {
@@ -130,7 +130,7 @@ qcServer <- function(id, RGset, raw_normalised, targets) {
       req(RGset(), targets())
       withProgress(message = 'Generating Beta Distribution Plot...', value = 0, {
         incProgress(0.1, detail = "Calculating density")
-        densityPlot(RGset(), sampGroups = targets()$Sample_Label,
+        densityPlot(RGset(), sampGroups = targets()$Sample_Group,
                     main = "Beta values distribution of raw data", xlab = "Beta values")
         incProgress(1, detail = "Plot ready")
       })
@@ -142,10 +142,52 @@ qcServer <- function(id, RGset, raw_normalised, targets) {
       withProgress(message = 'Generating Bean Plot...', value = 0, {
         incProgress(0.1, detail = "Preparing bean plot data")
         par(mar = c(5, 6, 4, 2))
-        densityBeanPlot(RGset(), sampGroups = targets()$Sample_Label, sampNames = targets()$Sample_Name)
+        densityBeanPlot(RGset(), sampGroups = targets()$Sample_Group, sampNames = targets()$Sample_Name)
         incProgress(1, detail = "Plot ready")
       })
     })
+    
+    output$download_current_plot <- downloadHandler(
+      filename = function() {
+        paste0("QC_", input$qc_plot, "_", Sys.Date(), ".", input$plot_format)
+      },
+      content = function(file) {
+        req(input$qc_plot)
+        
+        plot_fun <- switch(input$qc_plot,
+                           "plot1" = function() {
+                             plot(density(as.vector(assay(RGset(), "Red"))), main = "Channel Intensities", lwd = 2)
+                             lines(density(as.vector(assay(RGset(), "Green"))), col = "green", lwd = 2)
+                             legend("topright", legend = c("Red Channel", "Green Channel"), col = c("black", "green"), lwd = 2)
+                           },
+                           "plot2" = function() {
+                             qc <- getQC(raw_normalised())
+                             plotQC(qc)
+                           },
+                           "plot3" = function() {
+                             mdsPlot(RGset(), sampNames = targets()$Array, sampGroups = targets()$Sample_Group,
+                                     main = "Raw Beta MDS", legendNCol = 1, legendPos = "topright")
+                           },
+                           "plot4" = function() {
+                             densityPlot(RGset(), sampGroups = targets()$Sample_Group,
+                                         main = "Beta values distribution of raw data", xlab = "Beta values")
+                           },
+                           "plot5" = function() {
+                             par(mar = c(5, 6, 4, 2))
+                             densityBeanPlot(RGset(), sampGroups = targets()$Sample_Group, sampNames = targets()$Sample_Name)
+                           })
+        
+        if (input$plot_format == "pdf") {
+          pdf(file,width = 12, height = 7)
+          plot_fun()
+          dev.off()
+        } else if (input$plot_format == "png") {
+          png(file, width = 1700, height = 1000, res = 150)
+          plot_fun()
+          dev.off()
+        }
+      }
+    )
     
     # Download Handler for QC report
     output$download_qc_report <- downloadHandler(
