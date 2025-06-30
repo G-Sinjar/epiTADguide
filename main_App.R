@@ -10,6 +10,7 @@ library(DT) # DT is needed for the filtering module's table output
 library(writexl) # For excel downloads in filtering module
 library(openxlsx) # For excel downloads in filtering module
 library(GenomicRanges) # For GenomicRatioSet and related operations in filtering module
+library(shinyWidgets)
 
 # 2) Source your existing modules
 source("modules/01_loadData_Module.R")
@@ -22,6 +23,8 @@ source("utils/dmrs_utils.R")
 source("utils/preprocessing_utils.R")
 source("modules/07_boxplots_Module.R")
 source("utils/dmrs_boxplot_utils.R")
+source("modules/08_offspotter_results_processing_module.R")
+
 
 
 
@@ -73,47 +76,52 @@ ui <- navbarPage(
            
   ),
   tabPanel("DMR Boxplots",
-           boxplotUI("boxplot_module_id")
-  )
+           boxplotUI("boxplot_module_id"),
+           actionButton("to_offtargets", "Next → Offtargets Import")
+  ),
+  tabPanel("Offtargets Import",
+           offtargetsUI("myOfftargetModule"))
 )
 
 
 # 4) server
 server <- function(input, output, session) {
+  
+  # --- Helper Functions ---
+  disable_tab <- function(tab_name) {
+    runjs(sprintf("$('li a[data-value=\"%s\"]').addClass('disabled');", tab_name))
+  }
+  
+  enable_tab <- function(tab_name) {
+    runjs(sprintf("$('li a[data-value=\"%s\"]').removeClass('disabled');", tab_name))
+  }
+  
   # --- Disable tab navigation initially ---
   disable("main_tabs") # disables all tab switching via clicks
   
-  # Allow only first tab to be selected initially and disable subsequent tabs
   observe({
-    runjs("
-      $('li a[data-value=\"QC Plots\"]').addClass('disabled');
-      $('li a[data-value=\"Normalisation\"]').addClass('disabled');
-      $('li a[data-value=\"Filtering\"]').addClass('disabled'); 
-      $('li a[data-value=\"Annotation\"]').addClass('disabled');
-      $('li a[data-value=\"DMR Identification\"]').addClass('disabled');
-      $('li a[data-value=\"DMR Boxplots\"]').addClass('disabled');
-    ")
+    # Disable all except Offtargets Import and Load Raw Data tab
+    tabs_to_disable <- c("QC Plots", "Normalisation", "Filtering", "Annotation", "DMR Identification", "DMR Boxplots")
+    lapply(tabs_to_disable, disable_tab)
+    # Offtargets Import remains enabled always, so no disable call here
   })
   
-  # --- Module Server Calls and Data Flow ---
-  
-  # Load Data Module
-  # This module returns a list of reactive values: RGset, raw_normalised, targets
-  loaded_data <- loadDataServer("loader")
   
   normalized_output <- reactiveVal(NULL)
   filter_results <- reactiveVal(NULL)
   annotation_results <- reactiveVal(NULL)
   dmr_results <- reactiveVal(NULL)
+  offtargets_results <- reactiveVal(NULL)
   
-  
-  
+  # --- Module Server Calls and Data Flow ---
+  # 1- Load Data Module
+  # This module returns a list of reactive values: RGset, raw_normalised, targets
+  loaded_data <- loadDataServer("loader")
   # --- Navigation Logic ---
-  
   # Navigate to QC tab
   observeEvent(input$to_qc, {
     # 1. Enable tab
-    runjs("$('li a[data-value=\"QC Plots\"]').removeClass('disabled');")
+    enable_tab("QC Plots")
     
     # 2. Switch to the QC tab
     updateNavbarPage(session, "main_tabs", selected = "QC Plots")
@@ -129,7 +137,7 @@ server <- function(input, output, session) {
   # Navigate to Normalisation tab
   observeEvent(input$to_norm, {
     # 1. Enable the Normalisation tab
-    runjs("$('li a[data-value=\"Normalisation\"]').removeClass('disabled');")
+    enable_tab("Normalisation")
     
     # 2. Switch to the Normalisation tab
     updateNavbarPage(session, "main_tabs", selected = "Normalisation")
@@ -150,7 +158,7 @@ server <- function(input, output, session) {
   observeEvent(input$to_filter, {
     req(normalized_output())
     
-    runjs("$('li a[data-value=\"Filtering\"]').removeClass('disabled');")
+    enable_tab("Filtering")
     updateNavbarPage(session, "main_tabs", selected = "Filtering")
     
     res <- filter_data_server(
@@ -168,7 +176,7 @@ server <- function(input, output, session) {
     req(filter_results())
       
     
-    runjs("$('li a[data-value=\"Annotation\"]').removeClass('disabled');")
+    enable_tab("Annotation")
     updateNavbarPage(session, "main_tabs", selected = "Annotation")
     
     # Pass the reactive filtered GenomicRatioSet to annotation module
@@ -177,21 +185,14 @@ server <- function(input, output, session) {
     )
   })
   
-'  # If you want to access them:
-  annotated_table <- annotation_results$annotated_table
-  annotation_object <- annotation_results$annotation_object'
   
   # --- Navigate to DMR Identification tab ---
   observeEvent(input$to_dmrs, {
     req(filter_results()) 
     # No explicit req for tx_gr_filtered_global needed here as it's defined globally
     
-    runjs("$('li a[data-value=\"DMR Identification\"]').removeClass('disabled');")
+    enable_tab("DMR Identification")
     updateNavbarPage(session, "main_tabs", selected = "DMR Identification")
-    
-    # Call the DMR module server
-    # Pass the filtered GenomicRatioSet from the filtering module
-    # Pass the globally prepared tx_gr_filtered object
     dmr_results(
       dmrs_server(
         id = "dmrs_module_id",
@@ -204,16 +205,27 @@ server <- function(input, output, session) {
   
   # --- Navigate to DMR Boxplots tab ---
   observeEvent(input$to_boxplots, {
-    runjs("$('li a[data-value=\"DMR Boxplots\"]').removeClass('disabled');")
+    req(dmr_results(), annotation_results())
+    
+    enable_tab("DMR Boxplots")
     updateNavbarPage(session, "main_tabs", selected = "DMR Boxplots")
     boxplotServer(
       id = "boxplot_module_id",
-      dmrs_table = dmr_results()$dmr_table(),
-      annotated_with_betas_df = annotation_results()$annotated_table(),
-      pheno_data = dmr_results()$pheno_data()
+      dmr_output_reactive = dmr_results,        
+      annotation_output_reactive = annotation_results 
     )
   })
   
+  # DMR Boxplots -> Offtargets Import navigation
+  observeEvent(input$to_offtargets, {
+    enable_tab("Offtargets Import") # just in case, enable tab
+    updateNavbarPage(session, "main_tabs", selected = "Offtargets Import")
+  })
+  
+  offtargets_results(
+    offtargetsServer("myOfftargetModule")
+  )
+ 
 }
 
 shinyApp(ui, server)

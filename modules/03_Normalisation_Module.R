@@ -369,7 +369,7 @@ norm_server <- function(id, RGset, raw_normalised, targets) {
 }
 
 
-# 1) Libraries
+'# 1) Libraries
 library(shiny)  
 library(bslib)  
 library(minfi)  
@@ -406,4 +406,4 @@ server <- function(input, output, session) {
 }
 
 
-shinyApp(ui, server)
+shinyApp(ui, server)'

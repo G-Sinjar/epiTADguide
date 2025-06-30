@@ -77,7 +77,7 @@ annotationServer <- function(id, grset_reactive) {
           
           # Step 4: Save annotation object to RDS
           incProgress(0.8, detail = "Step 4: Saving annotation object...")
-          if (!dir.exists("./intermediate_data")) {
+          'if (!dir.exists("./intermediate_data")) {
             dir.create("./intermediate_data", recursive = TRUE)
           }
           saved_path <- paste0("./intermediate_data/annotated_object_", format(Sys.Date(), "%Y%m%d"), ".rds")
@@ -90,7 +90,7 @@ annotationServer <- function(id, grset_reactive) {
           
           
           showNotification(paste("✅ Annotation object automatically saved to:", saved_path),
-                           type = "message", duration = 10)
+                           type = "message", duration = 10)'
         } else {
           showNotification("Row names do not match between annotation and beta values.", type = "error")
           annot_df(NULL)
@@ -116,12 +116,10 @@ annotationServer <- function(id, grset_reactive) {
       }
     )
     # Return only the annotation object
-    return(reactive({
-      list(
-        annotation_object = annotation_obj(),
-        annotated_table = annot_df()
-      )
-    }))
+    return(list(
+        annotation_object = annotation_obj,
+        annotated_table = annot_df
+      ))
   })
 }
 

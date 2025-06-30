@@ -198,14 +198,14 @@ dmrs_server <- function(id, filtered_rgset_reactive, tx_gr_filtered_static) {
         # Save both DMR and phenotype results to RDS
         base_filename <- get_dmr_base_filename(input$cutoff_from, input$cutoff_to, input$B_val)
         
-        if (!dir.exists("intermediate_data")) dir.create("intermediate_data")
+        'if (!dir.exists("intermediate_data")) dir.create("intermediate_data")
         output_path <- file.path("intermediate_data", paste0(base_filename, ".rds"))
         
         saveRDS(list(
           dmr_table = dmr_result(),
           pheno_data = pheno_result()
         ), file = output_path)
-        dmr_status_text(paste0(dmr_status_text(), "\n📁 Saved full results automatically to ", output_path))
+        dmr_status_text(paste0(dmr_status_text(), "\n📁 Saved full results automatically to ", output_path))'
       })
     })
     

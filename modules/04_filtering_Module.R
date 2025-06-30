@@ -431,7 +431,7 @@ filter_data_server <- function(id, RGset, raw_normalised, normalized_all_methods
 # Sources:
 #source("./utils/preprocessing_utils.R")
 # ───────────────────────────────────────────────────────────────────────
-'ui <- page_navbar(
+ui <- page_navbar(
   title = "EPIC Array Pipeline",
   theme = bs_theme(version = 5, bootswatch = "flatly"),
   nav_panel("Filtering",
@@ -465,4 +465,4 @@ server <- function(input, output, session) {
   
 }
 
-shinyApp(ui = ui, server = server)'
+shinyApp(ui = ui, server = server)
