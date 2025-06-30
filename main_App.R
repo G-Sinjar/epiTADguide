@@ -11,6 +11,8 @@ library(writexl) # For excel downloads in filtering module
 library(openxlsx) # For excel downloads in filtering module
 library(GenomicRanges) # For GenomicRatioSet and related operations in filtering module
 library(shinyWidgets)
+library(reticulate) # ADDED: Needed for Python integration in tadcalling_module
+library(processx) # ADDED: Needed for running external processes (Java TADcaller)
 
 # 2) Source your existing modules
 source("modules/01_loadData_Module.R")
@@ -24,6 +26,8 @@ source("utils/preprocessing_utils.R")
 source("modules/07_boxplots_Module.R")
 source("utils/dmrs_boxplot_utils.R")
 source("modules/08_offspotter_results_processing_module.R")
+source("modules/09_TADcalling_module.R")
+source("utils/TADcalling_utils.R")
 
 
 
@@ -80,7 +84,12 @@ ui <- navbarPage(
            actionButton("to_offtargets", "Next → Offtargets Import")
   ),
   tabPanel("Offtargets Import",
-           offtargetsUI("myOfftargetModule"))
+           offtargetsUI("myOfftargetModule"),
+           actionButton("to_tadcalling", "Next → TAD Calling")
+  ),
+  tabPanel("TAD Calling",
+           tadcalling_ui("my_tadcalling_module")
+  )
 )
 
 
@@ -112,6 +121,7 @@ server <- function(input, output, session) {
   annotation_results <- reactiveVal(NULL)
   dmr_results <- reactiveVal(NULL)
   offtargets_results <- reactiveVal(NULL)
+  tadcalling_results <- reactiveVal(NULL)
   
   # --- Module Server Calls and Data Flow ---
   # 1- Load Data Module
@@ -221,9 +231,16 @@ server <- function(input, output, session) {
     enable_tab("Offtargets Import") # just in case, enable tab
     updateNavbarPage(session, "main_tabs", selected = "Offtargets Import")
   })
-  
   offtargets_results(
     offtargetsServer("myOfftargetModule")
+  )
+  
+  observeEvent(input$to_tadcalling, {
+    enable_tab("TAD Calling") # Enable the TAD Calling tab
+    updateNavbarPage(session, "main_tabs", selected = "TAD Calling")
+  })
+  tadcalling_results(
+    tadcalling_server("my_tadcalling_module") # Save the returned reactive list
   )
  
 }
