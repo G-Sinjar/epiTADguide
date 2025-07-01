@@ -151,6 +151,21 @@ offtargetsServer <- function(id) {
       }
       msgs <- append(msgs, "✅ Step 5b - Filtered out on-targets")
       
+      # ✅ Step 6: Save as RDS in ./intermediate_data ------------------------
+      output_dir <- "./intermediate_data"
+      if (!dir.exists(output_dir)) dir.create(output_dir, recursive = TRUE)
+      
+      # Construct safe filename from guide names
+      safe_filename <- gsub("[^A-Za-z0-9_]", "_", paste0(tools::file_path_sans_ext(file_names), collapse = "_"))
+      output_path <- file.path(output_dir, paste0(safe_filename, ".rds"))
+      
+      tryCatch({
+        saveRDS(final, output_path)
+        msgs <- append(msgs, paste0("💾 Step 6 - Saved processed data as RDS at: ", output_path))
+      }, error = function(e) {
+        msgs <<- append(msgs, paste0("❌ Step 6 - Saving RDS failed: ", e$message))
+      })
+      
       processed_data(final)
       output_messages(msgs)
     })
@@ -174,7 +189,7 @@ offtargetsServer <- function(id) {
       n <- nrow(processed_data())
       HTML(paste0("<p><strong>", n, "</strong> off-targets found</p>"))
     })
-    
+
     return(processed_data)
   })
 }
@@ -182,8 +197,11 @@ offtargetsServer <- function(id) {
 # app.R
 
 library(shiny)
-library(bslib)
 library(DT)
+library(readr)
+library(dplyr)
+library(stringr)
+
 
 ui <- page_navbar(
   title = "EPIC Array Pipeline",
