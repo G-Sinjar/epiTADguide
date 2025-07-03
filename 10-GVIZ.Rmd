@@ -53,7 +53,7 @@ gtrack <- GenomeAxisTrack()
 ## 1b -CpGs track
 ```{r}
 # a- get the final table for all cpgs
-#cpgs <- read_excel("./Output/10-cpgs_for_Granges.xlsx",col_names = TRUE) #891492     23
+cpgs <- read_excel("./Output/10-cpgs_for_Granges.xlsx",col_names = TRUE) #891492     23
 #head(cpgs)
 
 # b- convert to genomicRanges
@@ -63,7 +63,7 @@ mcols(gr_cpgs) <- cpgs[, 4:ncol(cpgs)]
 #gr_cpgs
 
 
-# --- Define P-value Ranges and Corresponding Colors ---
+'# --- Define P-value Ranges and Corresponding Colors ---
 legend_labels <- c("p≤0.001", "0.001<p≤0.01", "0.01<p≤0.05", "0.05<p≤0.1", "p>0.1")
 p_value_ranges <- c(0, 0.001, 0.01, 0.05, 0.1, 1)
 p_value_colors <- c(
@@ -74,7 +74,7 @@ p_value_colors <- c(
   "#9ebcda"   # Steel Blue
 )
 
-'p_value_colors <- c(
+p_value_colors <- c(
   "#08306b",  # navy (very significant)
   "#2171b5",  # royal blue
   "#6baed6",  # sky blue
@@ -88,7 +88,7 @@ p_value_colors <- c(
   "#41ab5d",  # moderate (teal/green)
   "#fdb863",  # weakly significant (orange)
   "#d73027"   # not significant (red)
-)'
+)
 
 gr_cpgs$color_group <- p_value_colors[findInterval(gr_cpgs$pval, p_value_ranges)]
 
@@ -97,14 +97,14 @@ gr_cpgs$color_group <- p_value_colors[findInterval(gr_cpgs$pval, p_value_ranges)
 cols <- colnames(mcols(gr_cpgs))
 # Find position to insert: before last 8 columns
 insert_pos <- length(cols) - 9
-# Remove 'color_group' temporarily if already present
+# Remove #color_group# temporarily if already present
 cols <- setdiff(cols, "color_group")
-# New column order: insert 'color_group' before last 8
+# New column order: insert #color_group# before last 8
 new_order <- append(cols, "color_group", after = insert_pos)
 # Reassign mcols in new order
 mcols(gr_cpgs) <- mcols(gr_cpgs)[, new_order]
 gr_cpgs
-
+'
 
 # Create the AnnotationTrack
 sondentrack <- AnnotationTrack(gr_cpgs, 
@@ -118,13 +118,13 @@ sondentrack <- AnnotationTrack(gr_cpgs,
 
 
 # --- Create the plot ---
-plotTracks(list(itrack, gtrack, sondentrack),
+'plotTracks(list(itrack, gtrack, sondentrack),
            chromosome = chr,
            from = from,
            to = to,
            showBandId = TRUE,
            cex.bands = 0.7,
-           stacking = "dense")
+           stacking = "dense")'
 ```
 
 ## 1 legend label --> not sinvoll cause a full plot
@@ -187,7 +187,7 @@ if (!file.exists(destfile)) {
 cpg_Islands <- read.table(gzfile(destfile), header = FALSE, sep = "\t", stringsAsFactors = FALSE)
 
 colnames(cpg_Islands) <- c("bin", "chrom","chromStart","chromEnd","name","length","cpgNum","gcNum","perCpg","perGc", "obsExp")
-#View(cpg_Islands)
+View(cpg_Islands)
 
 #Note: all start coordinates in our database are 0-based, not 1-based. 
 
@@ -529,6 +529,29 @@ plotGvizTracks <- function(from, to){
 }
 ```
 
+# getting chromosome length
+```{r}
+#BiocManager::install("BSgenome.Hsapiens.UCSC.hg38")
+#BiocManager::install("GenomeInfoDb")
+
+library(BSgenome.Hsapiens.UCSC.hg38)
+library(GenomeInfoDb)
+
+# Load the hg38 genome
+hg38 <- BSgenome.Hsapiens.UCSC.hg38
+
+# Get chromosome lengths
+chr_lengths <- seqlengths(hg38)
+
+# Print as data frame
+chr_size_df <- data.frame(
+  Chromosome = names(chr_lengths),
+  Length = as.numeric(chr_lengths)
+)
+
+# View top rows
+View(chr_size_df)
+```
 
 
 # shiny app:

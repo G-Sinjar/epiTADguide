@@ -12,7 +12,9 @@ modules/intermediate_data/
 modules/Output
 .RDataTmp
 .Rhistory
-
+cpgIslandExt_hg38.txt.gz
+modules/cpgIslandExt_hg38.txt.gz
+#
 # R and IDE temp files
 .RData
 .Rhistory
