@@ -69,8 +69,8 @@ create_gr_offtargets <- function(offtarget_table) {
 }
 
 #test function
-offtargets_combined <- readRDS("C:/Users/ghaza/Documents/ghazal/Bioinformatik_Fächer/Masterarbeit_Project/Scripts/R_Scripts/modules/intermediate_data/guide1_guide2_guide3_guide4_guide5_guide6.rds")
-gr_offtargets <- create_gr_offtargets(offtargets_combined)
+#offtargets_combined <- readRDS("C:/Users/ghaza/Documents/ghazal/Bioinformatik_Fächer/Masterarbeit_Project/Scripts/R_Scripts/modules/intermediate_data/guide1_guide2_guide3_guide4_guide5_guide6.rds")
+#gr_offtargets <- create_gr_offtargets(offtargets_combined)
 
 #-----------------------------------------------------------------------------------
 # function 4: create granges of tads/subtads table
@@ -260,13 +260,13 @@ create_tracks <- function(genome, chr,
 ################## test function
 
 # -----------------
-# gene granges which is global
+'# gene granges which is global
 library(EnsDb.Hsapiens.v86)
 edb <- EnsDb.Hsapiens.v86
 options(ucscChromosomeNames = TRUE)
 tx_gr <- genes(edb)
 tx_gr_filtered_global <- keepSeqlevels(tx_gr, standardChromosomes(tx_gr), pruning.mode = "coarse")
-seqlevelsStyle(tx_gr_filtered_global) <- "UCSC"
+seqlevelsStyle(tx_gr_filtered_global) <- "UCSC"'
 # ------------------
 'tracks <- create_tracks(genome = "hg38", chr = "chr13",
                         gr_cpgs = cpgs_gr,

@@ -46,16 +46,18 @@ offtargetsUI <- function(id) {
   )
 }
 
+
+
 offtargetsServer <- function(id) {
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
     
     output_messages <- reactiveVal(list())
-    processed_data <- reactiveVal(NULL)
+    processed_data_df <- reactiveVal(NULL) # Changed name to clarify it holds the data.frame
     
     observeEvent(input$run_processing, {
       output_messages(list())
-      processed_data(NULL)
+      processed_data_df(NULL) # Initialize to NULL
       
       msgs <- list()
       all_guides <- list()
@@ -166,7 +168,7 @@ offtargetsServer <- function(id) {
         msgs <<- append(msgs, paste0("❌ Step 6 - Saving RDS failed: ", e$message))
       })
       
-      processed_data(final)
+      processed_data_df(final) # Store the final data.frame in this reactiveVal
       output_messages(msgs)
     })
     
@@ -180,21 +182,20 @@ offtargetsServer <- function(id) {
     })
     
     output$offtargets_table <- renderDT({
-      req(processed_data())
-      processed_data()
+      req(processed_data_df()) # Use the new reactiveVal
+      processed_data_df() # Use the new reactiveVal
     }, options = list(pageLength = 25))
     
     output$row_count_text <- renderUI({
-      req(processed_data())
-      n <- nrow(processed_data())
+      req(processed_data_df()) # Use the new reactiveVal
+      n <- nrow(processed_data_df()) # Use the new reactiveVal
       HTML(paste0("<p><strong>", n, "</strong> off-targets found</p>"))
     })
-
-    return(processed_data)
+    return(processed_data_df) 
   })
 }
 
-# app.R
+'# app.R
 
 library(shiny)
 library(DT)
@@ -222,3 +223,4 @@ server <- function(input, output, session) {
 }
 
 shinyApp(ui = ui, server = server)
+'

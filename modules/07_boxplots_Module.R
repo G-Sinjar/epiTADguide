@@ -11,7 +11,7 @@ boxplotUI <- function(id) {
   
   layout_sidebar(
     sidebar = sidebar(
-      selectInput(ns("dmr"), "Select DMR ID", choices = NULL),
+      selectInput(ns("dmr"), "Select DMR ID (chr_gene)", choices = NULL),
       switchInput(ns("interactive"), "Interactive Boxplot", value = FALSE),
       switchInput(ns("pos_spacing"), "Use Positional Spacing", value = FALSE),
       helpText("Positional spacing will arrange the boxes according to their position on the chromosome, whereas PositionLabel will just use the CpG names."),
@@ -52,8 +52,6 @@ boxplotServer <- function(id, dmr_output_reactive, annotation_output_reactive) {
     })
     
     
-    
-    
     dmrs_table_r <- reactive({
       req(dmr_data_container())
       dmr_data_container()$dmr_table() 
@@ -69,9 +67,25 @@ boxplotServer <- function(id, dmr_output_reactive, annotation_output_reactive) {
       annotation_data_container()$annotated_table()
     })
 
-    observe({
+    'observe({
       req(dmrs_table_r())
       updateSelectInput(session, "dmr", choices = sort(unique(dmrs_table_r()$DMR_ID)))
+    })'
+    observe({
+      req(dmrs_table_r()) # Ensure dmrs_table_r() (the reactive value of the DMRs table) is available
+      
+      # Get the DMRs data frame
+      dmr_data <- dmrs_table_r()
+      
+      # Create a named vector for choices
+      # The names will be what the user sees, and the values will be the actual DMR_ID to be used internally by your app.
+      choices_list <- setNames(
+        dmr_data$DMR_ID, # The actual value passed to input$dmr
+        # Updated to include the chromosome
+        paste0(dmr_data$DMR_ID, " (", dmr_data$chr, "_", dmr_data$overlapped_gene_name, ")") 
+      )
+      
+      updateSelectInput(session, "dmr", choices = choices_list) 
     })
     
     status <- reactiveVal("ℹ️ Waiting to select a DMR ID.")
@@ -207,47 +221,68 @@ boxplotServer <- function(id, dmr_output_reactive, annotation_output_reactive) {
     })
   })
 }
-'# test 
 
-# Load required libs
+
+'#test app
+# Load libraries
 library(shiny)
-library(shinyWidgets)
 library(bslib)
+library(shinyWidgets)
 library(plotly)
 library(ggplot2)
 
-# Source utility and module files
+# Load module and utilities
 source("../utils/dmrs_boxplot_utils.R")
-#results_dmr <- readRDS("./modules/intermediate_data/DMRs_cutoff_neg0.15_to_0.15_B0_2025-06-23.rds")
-#results_anno <- readRDS("./modules/intermediate_data/annotated_object_20250623.rds")
 
+# Load RDS objects (as static lists)
+results_dmr <- readRDS("./intermediate_data/DMRs_cutoff_neg0.15_to_0.15_B0_2025-07-05.rds")
+results_anno <- readRDS("./intermediate_data/annotated_object_20250623.rds")
 
-# App UI
+# Wrap each element in reactiveVal(), and return a list of reactive functions
+dmr_data <- reactive({
+  list(
+    dmr_table = reactiveVal(results_dmr$dmr_table),
+    pheno = reactiveVal(results_dmr$pheno)
+  )
+})
+
+anno_data <- reactive({
+  list(
+    annotated_table = reactiveVal(results_anno$annotated_table)
+  )
+})
+
+# Create wrapper reactivity so that inside the module,
+# we can do dmr_output_reactive()$dmr_table()
+dmr_output_reactive <- reactive({
+  list(
+    dmr_table = dmr_data()$dmr_table,
+    pheno = dmr_data()$pheno
+  )
+})
+
+annotation_output_reactive <- reactive({
+  list(
+    annotated_table = anno_data()$annotated_table
+  )
+})
+
+# ---- UI ----
 ui <- page_navbar(
-  title = "EPIC Array Pipeline",
+  title = "DMR Boxplot Test App",
   theme = bs_theme(version = 5, bootswatch = "flatly"),
   nav_panel("Boxplots", boxplotUI("boxplot"))
 )
 
-# App server
+# ---- Server ----
 server <- function(input, output, session) {
-  
-  # Define the reactive expressions that load the data.
-  # These are the ones that will be passed to the module.
-  dmr_results_reactive <- reactive({results_dmr})
-  
-  annotation_results_reactive <- reactive({ results_anno})
-  
-  
-  # Pass the reactive expressions themselves (without () ) to the module.
   boxplotServer(
     id = "boxplot",
-    dmr_output_reactive = dmr_results_reactive,         # Pass the reactive expression
-    annotation_output_reactive = annotation_results_reactive # Pass the reactive expression
+    dmr_output_reactive = dmr_output_reactive,
+    annotation_output_reactive = annotation_output_reactive
   )
 }
 
-# Run app
-shinyApp(ui, server)
-
+# ---- Run the app ----
+shinyApp(ui = ui, server = server)
 '

@@ -184,57 +184,13 @@ annotate_dmrs_with_genes <- function(GR_Dmrs, tx_gr_filtered) {
   mcols(GR_Dmrs)$concatenated_gene_names <- all_concat_names
   
   # -------------------- STEP 3: Create unique DMR IDs based on gene names --------------------
-  # Prepare a data frame with DMR indices and their matching gene indices
-  hits_df <- data.frame(
-    DMR_idx = queryHits(hits_all),
-    Gene_idx = subjectHits(hits_all)
-  )
+  dmr_numbers <- seq_len(length(GR_Dmrs))
   
-  # Extract gene names from the annotation GRanges
-  gene_info_df <- tx_gr_filtered[subjectHits(hits_all)] %>%
-    as.data.frame() %>%
-    dplyr::select(gene_name)
+  # Paste "DMR" in front of each number to create the desired IDs
+  mcols(GR_Dmrs)$DMR_ID <- paste0("DMR", dmr_numbers)
   
-  # Combine DMR-gene index pairs with actual gene names
-  hits_df <- cbind(hits_df, gene_info_df)
-  
-  # Extract chromosome (seqnames) info from DMRs and attach DMR index
-  dmr_info <- as.data.frame(GR_Dmrs) %>%
-    dplyr::select(seqnames) %>%
-    mutate(DMR_idx = seq_len(length(GR_Dmrs)))
-  
-  # Join DMR metadata with overlapping gene info
-  dmr_gene_df <- left_join(dmr_info, hits_df, by = "DMR_idx") %>%
-    # If no gene is found, assign "NoGene"
-    mutate(gene_name = ifelse(is.na(gene_name), "NoGene", gene_name)) %>%
-    # Group by DMR and collapse gene names
-    group_by(DMR_idx) %>%
-    summarize(
-      Chromosome = first(seqnames),
-      Gene_names = paste(unique(gene_name), collapse = ";"),
-      .groups = "drop"
-    )
-  
-  # Generate base ID by appending ".DMR" to gene name(s)
-  dmr_gene_df$Base_ID <- paste0(dmr_gene_df$Gene_names, ".DMR")
-  
-  # -------------------- STEP 4: Ensure DMR IDs are unique --------------------
-  # Count how many times each base ID appears
-  id_counts <- table(dmr_gene_df$Base_ID)
-  
-  # Create suffixes to append for duplicates (default is empty string)
-  suffixes <- rep("", nrow(dmr_gene_df))
-  
-  # For base IDs that appear more than once, add -1, -2, ... etc. to make them unique
-  for (id in unique(dmr_gene_df$Base_ID)) {
-    matches <- which(dmr_gene_df$Base_ID == id)
-    if (length(matches) > 1) {
-      suffixes[matches] <- paste0("-", seq_along(matches))
-    }
-  }
-  
-  # Final unique DMR ID: base ID + suffix (if needed)
-  dmr_gene_df$DMR_ID <- paste0(dmr_gene_df$Base_ID, suffixes)
+  # Return annotated GRanges
+  return(GR_Dmrs)
   
   # -------------------- STEP 5: Assign final DMR_IDs back to GRanges --------------------
   # Create vector of same length as GR_Dmrs to hold DMR_IDs
