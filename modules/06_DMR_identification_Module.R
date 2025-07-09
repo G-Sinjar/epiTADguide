@@ -14,33 +14,85 @@ library(GenomicRanges)
 library(shiny) # Add shiny explicitly here for module to be self-contained in its library requirements
 library(minfi) # Add minfi explicitly here
 library(bslib) # Add bslib explicitly here
-library(EnsDb.Hsapiens.v86) 
+library(EnsDb.Hsapiens.v86)
+# In your app.R or global.R
+library(shinyjs)
 
 
 # ─────────────────────────────────────
 # User Interface (UI) FUNCTION
 # ─────────────────────────────────────
 dmrs_ui <- function(id) {
-  ns <- NS(id) 
+  ns <- NS(id)
   
   page_sidebar(
     sidebar = sidebar(
       width = "300px",
       
+      useShinyjs(), # Important for shinyjs functions to work
+      
       # Input: methylation cutoff range
       numericInput(ns("cutoff_from"), "Cutoff from (min -1 to 0):", value = -0.15, min = -1, max = 0),
       numericInput(ns("cutoff_to"), "Cutoff to (0 to 1):", value = 0.15, min = 0, max = 1),
-      helpText("Cutoff defines how large a difference in methylation must be to consider a region a potential DMR."),
+      
+      # --- CUTOFF HELP IMPLEMENTATION START ---
+      actionLink(ns("toggle_cutoff_help"), "Click for help on cutoff."),
+      div(
+        id = ns("cutoff_help_text_div"),
+        style = "display: none;",
+        helpText("Cutoff defines how large a difference in methylation must be to consider a region a potential DMR.")
+      ),
+      # --- CUTOFF HELP IMPLEMENTATION END ---
       
       br(),
       
       # Input: number of permutations
       numericInput(ns("B_val"), "Number of permutations (B):", value = 0, min = 0),
-      helpText("B controls the number of permutations used to assess significance, reducing false positives. More permutations = higher accuracy."),
+      
+      # --- PERMUTATIONS HELP IMPLEMENTATION START ---
+      actionLink(ns("toggle_B_help"), "Click for help on permutations."),
+      div(
+        id = ns("B_help_text_div"),
+        style = "display: none;",
+        helpText("B controls the number of permutations used to assess significance, reducing false positives. More permutations = higher accuracy.")
+      ),
+      # --- PERMUTATIONS HELP IMPLEMENTATION END ---
+      
+      br(), # Add a break for spacing
+      
+      # Core options radio buttons
+      radioButtons(
+        ns("core_choice"),
+        "Choose number of CPU cores:",
+        choices = c(
+          "Detected physical cores - 1" = "auto_cores",
+          "Choose cores manually" = "manual_cores"
+        ),
+        selected = "auto_cores"
+      ),
+      uiOutput(ns("detected_cores_info")), 
+      # New: Numeric input for manual core selection (dynamically rendered)
+      uiOutput(ns("manual_cores_input")),
+      
+      # --- CORE HELP IMPLEMENTATION START ---
+      actionLink(ns("toggle_cores_help"), "Click for help on core choice."),
+      div(
+        id = ns("cores_help_text_div"),
+        style = "display: none;",
+        helpText("This setting controls the number of CPU cores used for calculations. Using more cores can significantly speed up the analysis, especially for larger datasets or when running permutations (B > 0).\n\n",
+                 "  * **'Detected cores - 1'**: Recommended for most users. This option automatically uses all but one of your computer's available CPU cores. This leaves one core free for system operations, preventing your computer from becoming unresponsive.\n",
+                 "  * **'Choose cores manually'**: Allows you to specify an exact number of cores. Use this if you have specific performance requirements or if 'Detected cores - 1' does not suit your needs (e.g., if you want to use fewer cores to save resources for other applications)."
+        )
+      ),
+      # --- CORE HELP IMPLEMENTATION END ---
+      
+      
+      
+      br(), # Add a break for spacing (optional, but can help visual spacing)
       
       # Run button
       actionButton(ns("run_dmr"), "Detect DMRs"),
-      helpText("Note: This step can take at least 5 minutes (B=0). Higher B values will increase runtime. For example B=100 takes 1.5 hours."),
+      helpText("Note: This step can take at least 5 minutes (B=0). Higher B values will increase runtime. For example B=100 takes 1.5 hours using 6 Cores."),
       
       hr(),
       
@@ -61,7 +113,6 @@ dmrs_ui <- function(id) {
       ),
       
       # Bottom section: DMR Table
-      # This div will stretch to fill the available width
       div(
         style = "margin-top: 20px;", # Add some space above the table section
         h4("Detected DMRs"),
@@ -83,22 +134,105 @@ dmrs_server <- function(id, filtered_rgset_reactive, tx_gr_filtered_static) {
     # Reactive value to store final DMR and pheno tables
     dmr_result <- reactiveVal(NULL)
     pheno_result <- reactiveVal(NULL)
-
+    
+    # Reactive value to store the detected number of cores for display
+    detected_cores_display <- reactiveVal(NULL)
+    
     # Display current status
     output$dmr_status <- renderText({dmr_status_text()})
     
+    # Reactive expression for the number of cores to be used in calculations
+    num_cores_to_use <- reactive({
+      if (input$core_choice == "auto_cores") {
+        if (!requireNamespace("parallel", quietly = TRUE)) {
+          warning("Package 'parallel' is required for automatic core detection. Defaulting to 1 core.")
+          return(1)
+        }
+        max(1, parallel::detectCores(logical = FALSE) - 1)
+      } else {
+        req(input$manual_cores)
+        input$manual_cores
+      }
+    })
+    
+    # Dynamic UI for manual core selection
+    output$manual_cores_input <- renderUI({
+      ns <- session$ns
+      if (input$core_choice == "manual_cores") {
+        max_detected_cores <- if (requireNamespace("parallel", quietly = TRUE)) {
+          parallel::detectCores()
+        } else {
+          6 # Fallback if parallel package is not available
+        }
+        tagList(
+          numericInput(
+            ns("manual_cores"),
+            "Number of cores:",
+            value = max(1, max_detected_cores - 1),
+            min = 1,
+            max = max_detected_cores
+          ),
+          helpText(
+            paste0(
+              "Note: The default number that appears at first is the number of logical cores detected minus one. ",
+              "The detected number of your logical cores is ", max_detected_cores, ", which is the maximum, and it is not recommended to be used."
+            )
+          )
+        )
+      }
+    })
+    
+    # Observe core_choice to display detected cores information
+    observeEvent(input$core_choice, {
+      if (input$core_choice == "auto_cores") {
+        current_detected_cores <- if (requireNamespace("parallel", quietly = TRUE)) {
+          max(1, parallel::detectCores(logical = FALSE) - 1)
+        } else {
+          1 # Fallback if 'parallel' package is not available
+        }
+        detected_cores_display(paste("The number of physical CPUs/cores detected: ",current_detected_cores+1 , " \n.The number of cores to be used for the analysis: ",current_detected_cores, "."))
+      } else {
+        detected_cores_display(NULL) # Clear the text if manual is chosen
+      }
+    })
+    
+    # Render the detected cores information UI
+    output$detected_cores_info <- renderUI({
+      if (!is.null(detected_cores_display())) {
+        helpText(detected_cores_display())
+      }
+    })
+    
+    # --- HINT SERVER LOGIC ADDITIONS START ---
+    observeEvent(input$toggle_cutoff_help, {
+      shinyjs::toggle("cutoff_help_text_div")
+    })
+    
+    observeEvent(input$toggle_B_help, {
+      shinyjs::toggle("B_help_text_div")
+    })
+    
+    observeEvent(input$toggle_cores_help, {
+      shinyjs::toggle("cores_help_text_div")
+    })
+    # --- HINT SERVER LOGIC ADDITIONS END ---
+    
     # Main observer: Run on "Detect DMRs" button click
     observeEvent(input$run_dmr, {
-      # Ensure filtered_rgset_reactive has a value before proceeding
       req(filtered_rgset_reactive())
-      # Also ensure tx_gr_filtered_static is not NULL, as it's directly used
       req(tx_gr_filtered_static)
       
+      current_num_cores <- num_cores_to_use()
+      if (is.null(current_num_cores) || current_num_cores < 1) {
+        dmr_status_text("❌ Error: Invalid number of cores selected.")
+        return()
+      }
       
-      # Step 1 to 4: all inside progress
+      message(paste("Using", current_num_cores, "cores for bumphunter analysis."))
+      dmr_status_text(paste0("Step 1: Identifying DMRs using ", current_num_cores, " cores..."))
+      
       withProgress(message = "Running DMR detection...", value = 0, {
         
-        # Access the reactive value
         current_rgset <- filtered_rgset_reactive()
         
         if (is.null(current_rgset)) {
@@ -106,7 +240,6 @@ dmrs_server <- function(id, filtered_rgset_reactive, tx_gr_filtered_static) {
           return()
         }
         
-        dmr_status_text("Step 1: Identifying DMRs...")
         if (input$cutoff_from >= input$cutoff_to) {
           dmr_status_text("❌ Cutoff 'from' must be less than 'to'.")
           return()
@@ -115,11 +248,15 @@ dmrs_server <- function(id, filtered_rgset_reactive, tx_gr_filtered_static) {
         cutoff_vals <- c(input$cutoff_from, input$cutoff_to)
         B_val <- input$B_val
         
-        incProgress(0.1, detail = "Running bumphunter...")
+        incProgress(0.1, detail = paste("Running bumphunter with", current_num_cores, "cores..."))
         dmrs_step1_result <- tryCatch({
-          result <- run_bumphunter_dmrs(rgSet = current_rgset, cutoff = cutoff_vals, B = B_val)
+          result <- run_bumphunter_dmrs(
+            rgSet = current_rgset,
+            cutoff = cutoff_vals,
+            B = B_val,
+            num_cores = current_num_cores
+          )
           
-          # ✅ Sanity check to avoid NULL or malformed return structure
           if (!("DMR_table" %in% names(result))) {
             stop("Missing 'DMR_table' in the result returned by run_bumphunter_dmrs().")
           }
@@ -134,7 +271,6 @@ dmrs_server <- function(id, filtered_rgset_reactive, tx_gr_filtered_static) {
           return(NULL)
         })
         
-
         if (is.null(dmrs_step1_result)) {
           dmr_status_text(paste(dmr_status_text(), "\n❌ Step 1 failed ."))
           return()
@@ -146,7 +282,6 @@ dmrs_server <- function(id, filtered_rgset_reactive, tx_gr_filtered_static) {
         
         dmr_status_text(paste0(dmr_status_text(), sprintf("\n✅ Step 1 completed: %d DMRs found.", nrow(dmrs_step1_result$DMR_table))))
         
-        # Step 2 converting DMRs to genomic ranges
         dmr_status_text(paste0(dmr_status_text(), "\nStep 2: Converting DMRs to genomic ranges (GRanges)..."))
         incProgress(0.3, detail = "Converting to GRanges...")
         GR_Dmrs <- tryCatch({
@@ -161,11 +296,9 @@ dmrs_server <- function(id, filtered_rgset_reactive, tx_gr_filtered_static) {
         }
         dmr_status_text(paste0(dmr_status_text(), "\n✅ Step 2 completed!"))
         
-        # Step 3
         dmr_status_text(paste0(dmr_status_text(), "\nStep 3: Annotating DMRs with gene information..."))
         incProgress(0.6, detail = "Annotating with genes...")
         GR_Dmrs_annotated <- tryCatch({
-          # tx_gr_filtered_static is correctly passed as a static (non-reactive) object
           annotate_dmrs_with_genes(GR_Dmrs, tx_gr_filtered_static)
         }, error = function(e) {
           dmr_status_text(paste(dmr_status_text(), "\n❌ Error in Step 3 (annotation):", e$message))
@@ -182,9 +315,8 @@ dmrs_server <- function(id, filtered_rgset_reactive, tx_gr_filtered_static) {
           "\n✅ Step 3 completed: ", num_annotated, " DMRs overlapped with genes."
         ))
         
-        # Step 4 Preparing final DMR table
         dmr_status_text(paste0(dmr_status_text(), "\nStep 4: Preparing final DMR table..."))
-        incProgress(0.9, detail = "Finalizing table...") # Added progress for step 4
+        incProgress(0.9, detail = "Finalizing table...")
         
         df <- as.data.frame(GR_Dmrs_annotated)
         if ("seqnames" %in% colnames(df)) {
@@ -193,9 +325,9 @@ dmrs_server <- function(id, filtered_rgset_reactive, tx_gr_filtered_static) {
         if ("DMR_ID" %in% colnames(df)) {
           df <- df[, c("DMR_ID", setdiff(colnames(df), "DMR_ID"))]
         }
-        dmr_result(df) # Update the reactiveVal
+        dmr_result(df)
         dmr_status_text(paste0(dmr_status_text(), "\n✅ Step 4 completed: DMR table is ready for download."))
-        # Save both DMR and phenotype results to RDS
+        
         base_filename <- get_dmr_base_filename(input$cutoff_from, input$cutoff_to, input$B_val)
         
         if (!dir.exists("intermediate_data")) dir.create("intermediate_data")
@@ -209,9 +341,8 @@ dmrs_server <- function(id, filtered_rgset_reactive, tx_gr_filtered_static) {
       })
     })
     
-    
     output$dmr_table <- renderDataTable({
-      req(dmr_result()) 
+      req(dmr_result())  
       datatable(dmr_result(), options = list(scrollX = TRUE,
                                              pageLength = 10,
                                              autoWidth = TRUE))
@@ -245,16 +376,14 @@ dmrs_server <- function(id, filtered_rgset_reactive, tx_gr_filtered_static) {
     )
     
     return(list(
-        dmr_table = dmr_result,
-        pheno = pheno_result
-      )
+      dmr_table = dmr_result,
+      pheno = pheno_result
+    )
     )
   })
 }
 
 
-
-'
 # test module
 ## libraries in main app
 library(shiny)
@@ -307,4 +436,3 @@ server <- function(input, output, session) {
 }
 
 shinyApp(ui, server)
-'

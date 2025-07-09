@@ -21,6 +21,7 @@ library(doParallel)
 #' @param rgSet A GenomicRatioSet or RGChannelSet object (from the minfi package).
 #' @param cutoff Numeric. Methylation cutoff threshold for bump detection.
 #' @param B Integer. Number of permutations to use for significance estimation (0 = none).
+#' @param num_cores 
 #'
 #' @return A list containing:
 #' \describe{
@@ -34,7 +35,7 @@ library(doParallel)
 #' @importFrom doParallel registerDoParallel
 #'
 #' @export
-run_bumphunter_dmrs <- function(rgSet, cutoff = 0.15, B = 0) {
+run_bumphunter_dmrs <- function(rgSet, cutoff = 0.15, B = 0, num_cores = 1) {
   # Extract phenotype data
   pd <- tryCatch({
     pData(rgSet)
@@ -58,7 +59,7 @@ run_bumphunter_dmrs <- function(rgSet, cutoff = 0.15, B = 0) {
   if (!requireNamespace("doParallel", quietly = TRUE)) {
     stop("Package 'doParallel' is required for parallel execution.")
   }
-  doParallel::registerDoParallel(cores = 6)
+  doParallel::registerDoParallel(cores = num_cores) 
   
   # Run bumphunter with error handling
   dmrs <- tryCatch({
@@ -91,7 +92,9 @@ run_bumphunter_dmrs <- function(rgSet, cutoff = 0.15, B = 0) {
   ))
 }
 
-
+# test function
+#rgset <- readRDS("C:/Users/ghaza/Documents/ghazal/Bioinformatik_Fächer/Masterarbeit_Project/Scripts/R_Scripts/intermediate_data/filtered_GRset_SWAN_SNP_removed_SexChr_kept_20250605.rds")
+#dmr <- run_bumphunter_dmrs(rgSet =  rgset, num_cores = 6 )
 
 # ----------------------------------------------------------------------
 # 2. Convert DMRs to GRanges and process metadata
