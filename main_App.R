@@ -4,7 +4,7 @@ library(bslib)
 library(minfi)
 library(shinyjs) # for enabling/disabling tabs
 # both libraries are automaticaly loaded when they are needed -> to Do test app without thoes
-#library(IlluminaHumanMethylationEPICv2manifest) 
+#library(IlluminaHumanMethylationEPICv2manifest)
 #library(IlluminaHumanMethylationEPICv2anno.20a1.hg38)
 library(DT) # DT is needed for the filtering module's table output
 library(writexl) # For excel downloads in filtering module
@@ -18,7 +18,7 @@ library(processx) # ADDED: Needed for running external processes (Java TADcaller
 source("modules/01_loadData_Module.R")
 source("modules/02_QC_Module.R")
 source("modules/03_Normalisation_Module.R")
-source("modules/04_filtering_Module.R") 
+source("modules/04_filtering_Module.R")
 source("modules/05_Annotation_Module.R")
 source("modules/06_DMR_identification_Module.R")
 source("utils/dmrs_utils.R")
@@ -28,6 +28,8 @@ source("utils/dmrs_boxplot_utils.R")
 source("modules/08_offspotter_results_processing_module.R")
 source("modules/09_TADcalling_module.R")
 source("utils/TADcalling_utils.R")
+source("utils/GVIZ_plot_utils.R")
+source("modules/10_GVIZ_plot_Module.R")
 
 
 
@@ -40,9 +42,23 @@ tx_gr <- genes(edb)
 tx_gr_filtered_global <- keepSeqlevels(tx_gr, standardChromosomes(tx_gr), pruning.mode = "coarse")
 seqlevelsStyle(tx_gr_filtered_global) <- "UCSC"
 message("tx_gr_filtered prepared.")
-
-
-
+#-------------------------------------------------------------------------
+# Chromosome Lengths Table from BSgenome
+library(BSgenome.Hsapiens.UCSC.hg38)
+hg38 <- BSgenome.Hsapiens.UCSC.hg38
+chr_lengths <- seqlengths(hg38)
+chr_size_df_global <- data.frame(
+  Chromosome = names(chr_lengths),
+  Length = as.numeric(chr_lengths),
+  stringsAsFactors = FALSE
+)
+print("Global: chr_size_df_global loaded.")
+#------------------------------------------------------------------
+# CpG Islands - Loaded once globally
+# Uses the loadCpGIslands_gr function from utils/GVIZ_plot_utils.R
+gr_cpgIslands_global <- loadCpGIslands_gr(destfile = "cpgIslandExt_hg38.txt.gz")
+print(paste("Global: gr_cpgIslands_global loaded. Number of CpG Islands:", length(gr_cpgIslands_global)))
+#--------------------------------------------------------------------
 
 # 3) UI
 ui <- navbarPage(
@@ -63,10 +79,10 @@ ui <- navbarPage(
   
   tabPanel("Normalisation",
            norm_ui("norm"),
-           actionButton("to_filter", "Next → Filtering") 
+           actionButton("to_filter", "Next → Filtering")
   ),
   
-  tabPanel("Filtering", 
+  tabPanel("Filtering",
            filter_data_ui("filter_module"),
            actionButton("to_annot", "Next → Annotation")
   ),
@@ -74,7 +90,7 @@ ui <- navbarPage(
            annotationUI("annot_module"),
            actionButton("to_dmrs", "Next → DMR Identification")
   ),
-  tabPanel("DMR Identification", 
+  tabPanel("DMR Identification",
            dmrs_ui("dmrs_module_id") ,
            actionButton("to_boxplots", "Next → DMR Boxplots")
            
@@ -88,8 +104,13 @@ ui <- navbarPage(
            actionButton("to_tadcalling", "Next → TAD Calling")
   ),
   tabPanel("TAD Calling",
-           tadcalling_ui("my_tadcalling_module")
+           tadcalling_ui("my_tadcalling_module"),
+           actionButton("to_gvizplot", "Next → final plot")
+  ),
+  tabPanel("Final plot",
+           GvizPlotUI("myGvizPlot")
   )
+  
 )
 
 
@@ -110,11 +131,22 @@ server <- function(input, output, session) {
   
   observe({
     # Disable all except Offtargets Import and Load Raw Data tab
-    tabs_to_disable <- c("QC Plots", "Normalisation", "Filtering", "Annotation", "DMR Identification", "DMR Boxplots")
+    tabs_to_disable <- c("QC Plots", "Normalisation", "Filtering", "Annotation", "DMR Identification", "DMR Boxplots", "Final plot")
     lapply(tabs_to_disable, disable_tab)
+    
     # Offtargets Import remains enabled always, so no disable call here
+    
+    # Disable all "Next" buttons initially
+    shinyjs::disable("to_qc")
+    # deleted to norm since this step is quick and not obligatory for the normalisation
+    shinyjs::disable("to_filter")
+    shinyjs::disable("to_annot")
+    shinyjs::disable("to_dmrs")
+    shinyjs::disable("to_boxplots")
+    shinyjs::disable("to_offtargets")
+    #shinyjs::disable("to_tadcalling") # commented cause it can work without off-targets -> they wont be ploted if not available but every thing else will be
+    #shinyjs::disable("to_gvizplot")   # commented cause it can work without tads -> they wont be ploted if not available but every thing else will be
   })
-  
   
   normalized_output <- reactiveVal(NULL)
   filter_results <- reactiveVal(NULL)
@@ -125,18 +157,28 @@ server <- function(input, output, session) {
   
   # --- Module Server Calls and Data Flow ---
   # 1- Load Data Module
-  # This module returns a list of reactive values: RGset, raw_normalised, targets
+  # This module returns a list of reactive values: RGset, raw_normalised, targets, project_dir
   loaded_data <- loadDataServer("loader")
+  
+  # OBSERVE targets from loaded_data and enable "Next -> QC" when it's created
+  observe({
+    if (!is.null(loaded_data$targets())) {
+      shinyjs::enable("to_qc")
+    } else {
+      shinyjs::disable("to_qc")
+    }
+  })
+  
   # --- Navigation Logic ---
   # Navigate to QC tab
   observeEvent(input$to_qc, {
-    # 1. Enable tab
-    enable_tab("QC Plots")
+    # Ensure targets is set before proceeding
+    req(loaded_data$targets())
     
-    # 2. Switch to the QC tab
+    enable_tab("QC Plots")
     updateNavbarPage(session, "main_tabs", selected = "QC Plots")
     
-    # 3. Load QC server logic (deferred execution)
+    # Load QC server logic (deferred execution)
     qcServer("qc",
              RGset = reactive({ loaded_data$RGset() }),
              raw_normalised = reactive({ loaded_data$raw_normalised() }),
@@ -146,27 +188,35 @@ server <- function(input, output, session) {
   
   # Navigate to Normalisation tab
   observeEvent(input$to_norm, {
-    # 1. Enable the Normalisation tab
-    enable_tab("Normalisation")
+    # Ensure normalized_output can be set by the module
+    req(loaded_data$RGset(), loaded_data$raw_normalised(), loaded_data$targets()) # Ensure inputs for normalisation are ready
     
-    # 2. Switch to the Normalisation tab
+    enable_tab("Normalisation")
     updateNavbarPage(session, "main_tabs", selected = "Normalisation")
     
-    # 3. Load the Normalisation server logic
-    # This module will return a reactive list containing all normalized methods.
-    norm_results <- norm_server("norm",
-                                RGset = reactive({ loaded_data$RGset() }),
-                                raw_normalised = reactive({ loaded_data$raw_normalised() }),
-                                targets = reactive({ loaded_data$targets() })
+    # Load the Normalisation server logic
+    norm_results_local <- norm_server("norm",
+                                      RGset = reactive({ loaded_data$RGset() }),
+                                      raw_normalised = reactive({ loaded_data$raw_normalised() }),
+                                      targets = reactive({ loaded_data$targets() })
     )
-    normalized_output(norm_results) 
+    normalized_output(norm_results_local) # Store the results in the reactiveVal
+    
+    # Enable "Next -> Filtering" button only when normalized_output has data
+    # Removed `once = TRUE`
+    observe({
+      if (!is.null(normalized_output())) {
+        shinyjs::enable("to_filter")
+      } else {
+        shinyjs::disable("to_filter")
+      }
+    })
   })
-  
   
   
   # Navigate to Filtering tab and run filtering module
   observeEvent(input$to_filter, {
-    req(normalized_output())
+    req(normalized_output()) # Ensure normalized data is available
     
     enable_tab("Filtering")
     updateNavbarPage(session, "main_tabs", selected = "Filtering")
@@ -179,37 +229,61 @@ server <- function(input, output, session) {
     )
     
     filter_results(res)
+    
+    # Enable "Next -> Annotation" button only when filter_results has data
+    # Removed `once = TRUE`
+    observe({
+      if (!is.null(filter_results()$filtered_data())) { # Assuming filter_results() will be non-NULL upon successful filtering
+        shinyjs::enable("to_annot")
+      } else {
+        shinyjs::disable("to_annot")
+      }
+    })
   })
   
   # Navigate to Annotation tab when clicking "Next → Annotation"
   observeEvent(input$to_annot, {
-    req(filter_results())
-      
+    req(filter_results()) # Ensure filtered data is available
     
     enable_tab("Annotation")
     updateNavbarPage(session, "main_tabs", selected = "Annotation")
     
     # Pass the reactive filtered GenomicRatioSet to annotation module
-    annotation_results(
-      annotationServer("annot_module", grset_reactive = filter_results()$filtered_data)
-    )
+    annotation_results_local <- annotationServer("annot_module", grset_reactive = filter_results()$filtered_data)
+    annotation_results(annotation_results_local) # Store results in reactiveVal
+    
+    # Enable "Next -> DMR Identification" button only when annotation_results has data
+    # Removed `once = TRUE`
+    observe({
+      if (!is.null(annotation_results()$annotated_table())) { # Assuming annotation_results() will be non-NULL upon successful annotation
+        shinyjs::enable("to_dmrs")
+      } else {
+        shinyjs::disable("to_dmrs")
+      }
+    })
   })
   
   
   # --- Navigate to DMR Identification tab ---
   observeEvent(input$to_dmrs, {
-    req(filter_results()) 
-    # No explicit req for tx_gr_filtered_global needed here as it's defined globally
+    req(filter_results(), annotation_results()) 
     
     enable_tab("DMR Identification")
     updateNavbarPage(session, "main_tabs", selected = "DMR Identification")
-    dmr_results(
-      dmrs_server(
-        id = "dmrs_module_id",
-        filtered_rgset_reactive = filter_results()$filtered_data,
-        tx_gr_filtered_static = tx_gr_filtered_global
-      )
+    dmr_results_local <- dmrs_server(
+      id = "dmrs_module_id",
+      filtered_rgset_reactive = filter_results()$filtered_data,
+      tx_gr_filtered_static = tx_gr_filtered_global
     )
+    dmr_results(dmr_results_local)
+    
+    observe({
+      if (!is.null(dmr_results()$dmr_table())) { 
+        shinyjs::enable("to_boxplots")
+      } else {
+        shinyjs::disable("to_boxplots")
+      }
+    })
   })
   
   
@@ -221,28 +295,57 @@ server <- function(input, output, session) {
     updateNavbarPage(session, "main_tabs", selected = "DMR Boxplots")
     boxplotServer(
       id = "boxplot_module_id",
-      dmr_output_reactive = dmr_results,        
-      annotation_output_reactive = annotation_results 
+      dmr_output_reactive = dmr_results,
+      annotation_output_reactive = annotation_results
     )
+    shinyjs::enable("to_offtargets")
   })
   
-  # DMR Boxplots -> Offtargets Import navigation
+  # # --- Navigate to off-targets tab ---
   observeEvent(input$to_offtargets, {
     enable_tab("Offtargets Import") # just in case, enable tab
     updateNavbarPage(session, "main_tabs", selected = "Offtargets Import")
   })
-  offtargets_results(
-    offtargetsServer("myOfftargetModule")
-  )
+  offtargets_results_local <- offtargetsServer("myOfftargetModule")
+  offtargets_results(offtargets_results_local)
+  #shinyjs::disable("to_tadcalling")
   
+  
+  
+  # --- Navigate to TADcalling tab ---
   observeEvent(input$to_tadcalling, {
     enable_tab("TAD Calling") # Enable the TAD Calling tab
     updateNavbarPage(session, "main_tabs", selected = "TAD Calling")
   })
-  tadcalling_results(
-    tadcalling_server("my_tadcalling_module") # Save the returned reactive list
+  tadcalling_results_local <- tadcalling_server("my_tadcalling_module")
+  tadcalling_results(tadcalling_results_local)
+  
+  'observe({
+    if (!is.null(tadcalling_results()$tads_table)) {
+      shinyjs::enable("to_gvizplot")
+    } else {
+      shinyjs::disable("to_gvizplot")
+    }
+  })'
+  
+  
+  # --- Navigate to final GVIZ plot tab ---
+  observeEvent(input$to_gvizplot, {
+    enable_tab("Final plot")
+    updateNavbarPage(session, "main_tabs", selected = "Final plot")
+  })
+  
+  GvizPlotServer(
+    id = "myGvizPlot",
+    dmr_results = dmr_results,
+    annotation_results = annotation_results,
+    offtarget_table = offtargets_results,
+    tad_table = reactive({ tadcalling_results()$tads_table }), # Ensure reactive access
+    subtad_table = reactive({ tadcalling_results()$subtads_table }), # Ensure reactive access
+    chr_size_df_global = chr_size_df_global,
+    tx_gr_filtered_global = tx_gr_filtered_global,
+    gr_cpgIslands_global = gr_cpgIslands_global
   )
- 
 }
 
 shinyApp(ui, server)

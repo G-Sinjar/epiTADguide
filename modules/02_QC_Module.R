@@ -43,7 +43,7 @@ qcUI <- function(id) {
 # ─────────────────────────────────────
 # SERVER FUNCTION
 # ─────────────────────────────────────
-qcServer <- function(id, RGset, raw_normalised, targets) {
+qcServer <- function(id, RGset, raw_normalised, targets, project_output_dir) {
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
     
@@ -149,8 +149,9 @@ qcServer <- function(id, RGset, raw_normalised, targets) {
     
     output$download_current_plot <- downloadHandler(
       filename = function() {
-        paste0("QC_", input$qc_plot, "_", Sys.Date(), ".", input$plot_format)
-      },
+        
+        paste0("QC_", input$qc_plot, "_", Sys.Date(), ".", input$plot_format)    
+        },
       content = function(file) {
         req(input$qc_plot)
         
@@ -225,7 +226,11 @@ library(bslib)
 library(minfi) 
 
 rds_path <- "../intermediate_data/preprocessed_data.rds"
-
+initial_path <- "./test_project_dir"
+if (!dir.exists(initial_path)) {
+  dir.create(initial_path, recursive = TRUE)
+  message("Created dummy project directory: ", initial_path)
+}
 # Check for the RDS file BEFORE launching the app
 if (!file.exists(rds_path)) {
   stop("Error: File not found: preprocessed_data.rds. Please run the data loading module first.")
@@ -244,12 +249,13 @@ server <- function(input, output, session) {
   reactive_RGset <- reactiveVal(data$RGset)
   reactive_raw_normalised <- reactiveVal(data$raw_normalised)
   reactive_targets <- reactiveVal(data$targets)
-  
+  simulated_project_path <- reactiveVal(initial_path)
   qcServer(
     "qc",
     RGset = reactive_RGset,
     raw_normalised = reactive_raw_normalised,
-    targets = reactive_targets
+    targets = reactive_targets,
+    project_output_dir =simulated_project_path
   )
 }
 

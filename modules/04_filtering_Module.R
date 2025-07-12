@@ -427,7 +427,7 @@ filter_data_server <- function(id, RGset, raw_normalised, normalized_all_methods
 }
 
 
-# test module
+'# test module
 # Sources:
 #source("./utils/preprocessing_utils.R")
 # ───────────────────────────────────────────────────────────────────────
@@ -465,4 +465,4 @@ server <- function(input, output, session) {
   
 }
 
-shinyApp(ui = ui, server = server)
+shinyApp(ui = ui, server = server)'

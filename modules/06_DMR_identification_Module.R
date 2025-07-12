@@ -32,8 +32,8 @@ dmrs_ui <- function(id) {
       useShinyjs(), # Important for shinyjs functions to work
       
       # Input: methylation cutoff range
-      numericInput(ns("cutoff_from"), "Cutoff from (min -1 to 0):", value = -0.15, min = -1, max = 0),
-      numericInput(ns("cutoff_to"), "Cutoff to (0 to 1):", value = 0.15, min = 0, max = 1),
+      numericInput(ns("cutoff_from"), "Cutoff from (min -1 to 0):", value = -0.15, min = -1, max = 0, step= 0.01),
+      numericInput(ns("cutoff_to"), "Cutoff to (0 to 1):", value = 0.15, min = 0, max = 1, step = 0.01),
       
       # --- CUTOFF HELP IMPLEMENTATION START ---
       actionLink(ns("toggle_cutoff_help"), "Click for help on cutoff."),
@@ -384,7 +384,7 @@ dmrs_server <- function(id, filtered_rgset_reactive, tx_gr_filtered_static) {
 }
 
 
-# test module
+'# test module
 ## libraries in main app
 library(shiny)
 library(minfi)     # For methylation analysis
@@ -436,3 +436,4 @@ server <- function(input, output, session) {
 }
 
 shinyApp(ui, server)
+'
