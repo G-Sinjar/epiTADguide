@@ -34,7 +34,12 @@ annotationUI <- function(id) {
 # ─────────────────────────────────────
 # SERVER FUNCTION 
 # ─────────────────────────────────────
-annotationServer <- function(id, grset_reactive) {
+#' @param id Module ID.
+#' @param grset_reactive A reactive expression holding the filtered GenomicRatioSet object.
+#' @param project_output_dir A reactive expression for the project's output directory.
+#' @return A list of reactive values: `annotation_object` (the minfi annotation object),
+#'         and `annotated_table` (the combined annotation and beta values table).
+annotationServer <- function(id, grset_reactive, project_output_dir) {
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
     
@@ -44,6 +49,7 @@ annotationServer <- function(id, grset_reactive) {
     
     observeEvent(input$run_annot, {
       req(grset_reactive())
+      #req(project_output_dir())
       
       current_grset <- grset_reactive()
       print(paste("Class of object passed to getAnnotation:", class(current_grset)))
@@ -77,10 +83,12 @@ annotationServer <- function(id, grset_reactive) {
           
           # Step 4: Save annotation object to RDS
           incProgress(0.8, detail = "Step 4: Saving annotation object...")
-          'if (!dir.exists("./intermediate_data")) {
-            dir.create("./intermediate_data", recursive = TRUE)
+          output_dir_full <- file.path(project_output_dir(), "intermediate_data")
+          if (!dir.exists(output_dir_full)) {
+            dir.create(output_dir_full, recursive = TRUE)
           }
-          saved_path <- paste0("./intermediate_data/annotated_object_", format(Sys.Date(), "%Y%m%d"), ".rds")
+          saved_path <- file.path(output_dir_full, paste0("annotated_object_", format(Sys.Date(), "%Y%m%d"), ".rds"))
+          
           # Save full annotation results as list
           annotation_result_list <- list(
             annotation_object = annotation,
@@ -90,7 +98,7 @@ annotationServer <- function(id, grset_reactive) {
           
           
           showNotification(paste("✅ Annotation object automatically saved to:", saved_path),
-                           type = "message", duration = 10)'
+                           type = "message", duration = 10)
         } else {
           showNotification("Row names do not match between annotation and beta values.", type = "error")
           annot_df(NULL)
@@ -145,11 +153,12 @@ ui <- page_navbar(
 server <- function(input, output, session) {
   # Wrap your object as a reactive expression
   grset_reactive <- reactive({ ratio_geno_Swan_NoSNP })
+  path_rc <- reactive({"./epic-test"})
   
   # Call the module
-  annotated_result <- annotationServer("annot", grset_reactive)
-  print((annotated_result))
-  
+  annotated_result <- annotationServer("annot", 
+                                       grset_reactive= grset_reactive,
+                                       project_output_dir=path_rc)
 }
 
 shinyApp(ui, server)'

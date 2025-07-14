@@ -42,7 +42,7 @@ norm_ui <- function(id) {
 # SERVER FUNCTION 
 # ─────────────────────────────────────
 
-norm_server <- function(id, RGset, raw_normalised, targets) {
+norm_server <- function(id, RGset, raw_normalised, targets, project_output_dir) {
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
     
@@ -159,7 +159,7 @@ norm_server <- function(id, RGset, raw_normalised, targets) {
       }) # --- End withProgress block ---
       
       
-      '# saving the normalised data as .rds file
+      # saving the normalised data as .rds file
       if (!is.null(SWAN_normalised_res()) && !is.null(Quantile_normalised_res()) &&
           !is.null(funnorm_normalised_res()) && !is.null(noob_normalised_res()) &&
           !is.null(noob_swan_normalised_res())) {
@@ -180,13 +180,13 @@ norm_server <- function(id, RGset, raw_normalised, targets) {
             incProgress(0.4, detail = "saving as .rds file...")
             
             # Set output path
-            outputDir <- "./intermediate_data/"
+            outputDir <-file.path(project_output_dir(), "intermediate_data")
             # Make sure the directory exists
             if (!dir.exists(outputDir)) {
               dir.create(outputDir, recursive = TRUE)
             }
             # Save the file
-            saveRDS(normalised_list, file = file.path(outputDir, "normalised_data.rds"))
+            saveRDS(normalised_list, file = file.path(outputDir, "Five_objects_normalised_data.rds"))
             showNotification("✅ All normalizations saved successfully!", type = "message", duration = 10)
             incProgress(1, detail = "All normalizations saved successfully!")
             
@@ -195,7 +195,7 @@ norm_server <- function(id, RGset, raw_normalised, targets) {
             message("Save failed: ", e$message)
           })
         })
-      }'
+      }
     }, ignoreNULL = TRUE, ignoreInit = FALSE, once = TRUE)
     
     
@@ -385,6 +385,7 @@ preprocessed <- readRDS(path)
 RGset <- preprocessed$RGset
 targets <- preprocessed$targets
 raw_normalised <- preprocessed$raw_normalised
+path <- "./epic-test"
 
 # 3) Build the top‐level UI with three tabs (Load, QC, Normalization)
 ui <- page_navbar(
@@ -401,7 +402,8 @@ server <- function(input, output, session) {
   norm_server("norm",
               RGset = reactive({ RGset }), 
               raw_normalised = reactive({ raw_normalised }), 
-              targets = reactive({ targets })
+              targets = reactive({ targets }),
+              project_output_dir = reactive({path})
   )
 }
 

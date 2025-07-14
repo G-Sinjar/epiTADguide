@@ -126,7 +126,138 @@ dmrs_ui <- function(id) {
 # ─────────────────────────────────────
 # SERVER FUNCTION
 # ─────────────────────────────────────
-dmrs_server <- function(id, filtered_rgset_reactive, tx_gr_filtered_static) {
+# 06_DMR_identification_Module.R
+# Author: Ghazal Sinjar
+# Date: 17.06.2025
+# Description:
+# This Shiny module provides UI and server logic for identifying Differentially Methylated Regions (DMRs).
+# It utilizes the bumphunter algorithm to detect DMRs based on specified methylation cutoff values and permutation settings.
+# The module outputs an annotated table of detected DMRs, which can be downloaded in CSV or Excel format.
+
+#-------------------------------------------------------------------
+# libraries especially for this module
+library(DT)         # For interactive data tables
+library(openxlsx)
+library(GenomicRanges)
+library(shiny)      # Add shiny explicitly here for module to be self-contained in its library requirements
+library(minfi)      # Add minfi explicitly here
+library(bslib)      # Add bslib explicitly here
+library(EnsDb.Hsapiens.v86) # Keep this if used by your utility functions or further annotation
+library(shinyjs)    # Ensure shinyjs is loaded
+
+
+# ─────────────────────────────────────
+# User Interface (UI) FUNCTION
+# ─────────────────────────────────────
+dmrs_ui <- function(id) {
+  ns <- NS(id)
+  
+  page_sidebar(
+    sidebar = sidebar(
+      width = "300px",
+      
+      useShinyjs(), # Important for shinyjs functions to work
+      
+      # Input: methylation cutoff range
+      numericInput(ns("cutoff_from"), "Cutoff from (min -1 to 0):", value = -0.15, min = -1, max = 0, step= 0.01),
+      numericInput(ns("cutoff_to"), "Cutoff to (0 to 1):", value = 0.15, min = 0, max = 1, step = 0.01),
+      
+      # --- CUTOFF HELP IMPLEMENTATION START ---
+      actionLink(ns("toggle_cutoff_help"), "Click for help on cutoff."),
+      div(
+        id = ns("cutoff_help_text_div"),
+        style = "display: none;",
+        helpText("Cutoff defines how large a difference in methylation must be to consider a region a potential DMR.")
+      ),
+      # --- CUTOFF HELP IMPLEMENTATION END ---
+      
+      br(),
+      
+      # Input: number of permutations
+      numericInput(ns("B_val"), "Number of permutations (B):", value = 0, min = 0),
+      
+      # --- PERMUTATIONS HELP IMPLEMENTATION START ---
+      actionLink(ns("toggle_B_help"), "Click for help on permutations."),
+      div(
+        id = ns("B_help_text_div"),
+        style = "display: none;",
+        helpText("B controls the number of permutations used to assess significance, reducing false positives. More permutations = higher accuracy.")
+      ),
+      # --- PERMUTATIONS HELP IMPLEMENTATION END ---
+      
+      br(), # Add a break for spacing
+      
+      # Core options radio buttons
+      radioButtons(
+        ns("core_choice"),
+        "Choose number of CPU cores:",
+        choices = c(
+          "Detected physical cores - 1" = "auto_cores",
+          "Choose cores manually" = "manual_cores"
+        ),
+        selected = "auto_cores"
+      ),
+      uiOutput(ns("detected_cores_info")),
+      # New: Numeric input for manual core selection (dynamically rendered)
+      uiOutput(ns("manual_cores_input")),
+      
+      # --- CORE HELP IMPLEMENTATION START ---
+      actionLink(ns("toggle_cores_help"), "Click for help on core choice."),
+      div(
+        id = ns("cores_help_text_div"),
+        style = "display: none;",
+        helpText("This setting controls the number of CPU cores used for calculations. Using more cores can significantly speed up the analysis, especially for larger datasets or when running permutations (B > 0).\n\n",
+                 "  * **'Detected cores - 1'**: Recommended for most users. This option automatically uses all but one of your computer's available CPU cores. This leaves one core free for system operations, preventing your computer from becoming unresponsive.\n",
+                 "  * **'Choose cores manually'**: Allows you to specify an exact number of cores. Use this if you have specific performance requirements or if 'Detected cores - 1' does not suit your needs (e.g., if you want to use fewer cores to save resources for other applications)."
+        )
+      ),
+      # --- CORE HELP IMPLEMENTATION END ---
+      
+      
+      br(), # Add a break for spacing (optional, but can help visual spacing)
+      
+      # Run button
+      actionButton(ns("run_dmr"), "Detect DMRs"),
+      helpText("Note: This step can take at least 5 minutes (B=0). Higher B values will increase runtime. For example B=100 takes 1.5 hours using 6 Cores."),
+      
+      hr(),
+      
+      # Download options and button (only visible when results available)
+      uiOutput(ns("download_ui"))
+    ),
+    
+    # Main output panel
+    div(
+      style = "padding-left: 15px; padding-right: 15px;", # Add right padding for balance
+      layout_columns(
+        col_widths = c(12), # This specifies one column that takes up all 12 Bootstrap columns
+        fill = TRUE, # Make sure the card fills the available space
+        card(
+          card_title("DMR Identification Status"),
+          verbatimTextOutput(ns("dmr_status"), placeholder = TRUE)
+        )
+      ),
+      
+      # Bottom section: DMR Table
+      div(
+        style = "margin-top: 20px;", # Add some space above the table section
+        h4("Detected DMRs"),
+        DT::dataTableOutput(ns("dmr_table"))
+      )
+    )
+  )
+}
+
+
+# ─────────────────────────────────────
+# SERVER FUNCTION
+# ─────────────────────────────────────
+#' @param id Module ID.
+#' @param filtered_rgset_reactive A reactive expression holding the filtered RGChannelSet or GenomicRatioSet object.
+#' @param tx_gr_filtered_static A static (non-reactive) GRanges object of filtered gene transcripts for annotation.
+#' @param project_output_dir A reactive expression for the project's output directory.
+#' @return A list of reactive values: `dmr_table` (the detected DMRs table) and `pheno` (phenotype data).
+dmrs_server <- function(id, filtered_rgset_reactive, tx_gr_filtered_static,project_output_dir) {
   moduleServer(id, function(input, output, session) {
     
     # Reactive value to store status text
@@ -162,7 +293,7 @@ dmrs_server <- function(id, filtered_rgset_reactive, tx_gr_filtered_static) {
         max_detected_cores <- if (requireNamespace("parallel", quietly = TRUE)) {
           parallel::detectCores()
         } else {
-          6 # Fallback if parallel package is not available
+          4 # Fallback if parallel package is not available
         }
         tagList(
           numericInput(
@@ -216,6 +347,14 @@ dmrs_server <- function(id, filtered_rgset_reactive, tx_gr_filtered_static) {
       shinyjs::toggle("cores_help_text_div")
     })
     # --- HINT SERVER LOGIC ADDITIONS END ---
+    
+    # Helper function to generate a consistent filename base
+    get_dmr_base_filename <- function(cutoff_from, cutoff_to, B_val) {
+      paste0("DMRs_cutoff_",
+             format(cutoff_from, nsmall = 2), "_",
+             format(cutoff_to, nsmall = 2), "_B", B_val)
+    }
+    
     
     # Main observer: Run on "Detect DMRs" button click
     observeEvent(input$run_dmr, {
@@ -323,15 +462,16 @@ dmrs_server <- function(id, filtered_rgset_reactive, tx_gr_filtered_static) {
           colnames(df)[colnames(df) == "seqnames"] <- "chr"
         }
         if ("DMR_ID" %in% colnames(df)) {
-          df <- df[, c("DMR_ID", setdiff(colnames(df), "DMR_ID"))]
+          df <- df[, c("DMR_ID", base::setdiff(colnames(df), "DMR_ID"))]
         }
         dmr_result(df)
         dmr_status_text(paste0(dmr_status_text(), "\n✅ Step 4 completed: DMR table is ready for download."))
         
         base_filename <- get_dmr_base_filename(input$cutoff_from, input$cutoff_to, input$B_val)
+        output_dir_full <- file.path(project_output_dir(), "DMR_results") # Create a specific folder for DMRs
+        if (!dir.exists(output_dir_full)) dir.create(output_dir_full, recursive = TRUE)
+        output_path <- file.path(output_dir_full, paste0(base_filename, "_", format(Sys.Date(), "%Y%m%d"), ".rds")) 
         
-        if (!dir.exists("intermediate_data")) dir.create("intermediate_data")
-        output_path <- file.path("intermediate_data", paste0(base_filename, ".rds"))
         
         saveRDS(list(
           dmr_table = dmr_result(),
@@ -341,7 +481,7 @@ dmrs_server <- function(id, filtered_rgset_reactive, tx_gr_filtered_static) {
       })
     })
     
-    output$dmr_table <- renderDataTable({
+    output$dmr_table <- DT::renderDataTable({
       req(dmr_result())  
       datatable(dmr_result(), options = list(scrollX = TRUE,
                                              pageLength = 10,
@@ -432,8 +572,10 @@ server <- function(input, output, session) {
   filtered_rgset_reactive <- reactive({ filtered_rgset })
   
   # Call the module
-  annotated_table <- dmrs_server("dmrs", filtered_rgset_reactive,tx_gr_filtered)
+  annotated_table <- dmrs_server("dmrs", 
+                                 filtered_rgset_reactive,
+                                 tx_gr_filtered,
+                                 project_output_dir = reactive({"./epic-test"}))
 }
-
 shinyApp(ui, server)
 '

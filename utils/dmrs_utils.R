@@ -5,7 +5,8 @@
 
 #libraries
 library(doParallel)
-
+library(conflicted) # Make sure you have this package installed
+conflicts_prefer(base::setdiff)
 
 # ----------------------------------------------------------------------
 # 1. Run bumphunter to detect DMRs

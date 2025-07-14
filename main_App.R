@@ -33,7 +33,6 @@ source("modules/10_GVIZ_plot_Module.R")
 
 
 
-
 # This is a static object that will be passed to the DMR module
 message("Loading/Preparing tx_gr_filtered for annotation...")
 edb <- EnsDb.Hsapiens.v86
@@ -182,7 +181,8 @@ server <- function(input, output, session) {
     qcServer("qc",
              RGset = reactive({ loaded_data$RGset() }),
              raw_normalised = reactive({ loaded_data$raw_normalised() }),
-             targets = reactive({ loaded_data$targets() })
+             targets = reactive({ loaded_data$targets() }),
+             project_output_dir = reactive({ loaded_data$project_dir() })
     )
   })
   
@@ -198,7 +198,8 @@ server <- function(input, output, session) {
     norm_results_local <- norm_server("norm",
                                       RGset = reactive({ loaded_data$RGset() }),
                                       raw_normalised = reactive({ loaded_data$raw_normalised() }),
-                                      targets = reactive({ loaded_data$targets() })
+                                      targets = reactive({ loaded_data$targets() }),
+                                      project_output_dir = reactive({ loaded_data$project_dir() })
     )
     normalized_output(norm_results_local) # Store the results in the reactiveVal
     
@@ -225,7 +226,8 @@ server <- function(input, output, session) {
       "filter_module",
       RGset = reactive({ loaded_data$RGset() }),
       raw_normalised = reactive({ loaded_data$raw_normalised() }),
-      normalized_all_methods = reactive({ normalized_output() })
+      normalized_all_methods = reactive({ normalized_output() }),
+      project_output_dir = reactive({ loaded_data$project_dir() })
     )
     
     filter_results(res)
@@ -249,7 +251,9 @@ server <- function(input, output, session) {
     updateNavbarPage(session, "main_tabs", selected = "Annotation")
     
     # Pass the reactive filtered GenomicRatioSet to annotation module
-    annotation_results_local <- annotationServer("annot_module", grset_reactive = filter_results()$filtered_data)
+    annotation_results_local <- annotationServer("annot_module", 
+                                                 grset_reactive = filter_results()$filtered_data,
+                                                 project_output_dir=  reactive({ loaded_data$project_dir() }))
     annotation_results(annotation_results_local) # Store results in reactiveVal
     
     # Enable "Next -> DMR Identification" button only when annotation_results has data
@@ -273,7 +277,8 @@ server <- function(input, output, session) {
     dmr_results_local <- dmrs_server(
       id = "dmrs_module_id",
       filtered_rgset_reactive = filter_results()$filtered_data,
-      tx_gr_filtered_static = tx_gr_filtered_global
+      tx_gr_filtered_static = tx_gr_filtered_global,
+      project_output_dir = reactive({ loaded_data$project_dir() })
     )
     dmr_results(dmr_results_local)
     
@@ -306,18 +311,45 @@ server <- function(input, output, session) {
     enable_tab("Offtargets Import") # just in case, enable tab
     updateNavbarPage(session, "main_tabs", selected = "Offtargets Import")
   })
-  offtargets_results_local <- offtargetsServer("myOfftargetModule")
-  offtargets_results(offtargets_results_local)
-  #shinyjs::disable("to_tadcalling")
-  
-  
+    # Define the reactive project directory for this module call
+  project_dir_for_offtargets <- reactive({ # Renamed from tadcalling to be clear
+      if (!is.null(loaded_data$project_dir())) {
+        loaded_data$project_dir()
+      } else {
+        NULL # Pass NULL if not available, which triggers the module's fallback
+      }
+  })
+    # Initialize the offtargetsServer module and store its reactive outputs
+    # This line is corrected to store the *list of reactive outputs* into the reactiveVal
+  offtargets_results_returned <- offtargetsServer(
+      "myOfftargetModule",
+      project_output_dir = project_dir_for_offtargets
+  )
+    # Assign the returned list of reactives to the reactiveVal
+  offtargets_results(offtargets_results_returned)
+  shinyjs::enable("to_tadcalling")
+
+
   
   # --- Navigate to TADcalling tab ---
   observeEvent(input$to_tadcalling, {
     enable_tab("TAD Calling") # Enable the TAD Calling tab
     updateNavbarPage(session, "main_tabs", selected = "TAD Calling")
   })
-  tadcalling_results_local <- tadcalling_server("my_tadcalling_module")
+  # This is the key change:
+  # Check if loaded_data$project_dir() is available before passing it.
+  project_dir_for_tadcalling <- reactive({
+    if (!is.null(loaded_data$project_dir())) {
+      loaded_data$project_dir()
+    } else {
+      NULL # Pass NULL if not available, which triggers the module's fallback
+    }
+  })
+  
+  tadcalling_results_local <- tadcalling_server(
+    "my_tadcalling_module",
+    project_output_dir = project_dir_for_tadcalling # Pass the conditionally reactive value
+  )
   tadcalling_results(tadcalling_results_local)
   
   'observe({

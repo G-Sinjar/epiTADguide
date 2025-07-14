@@ -17,7 +17,7 @@ library(DT)
 library(writexl)
 
 # Source external utility functions for processing
-source("../utils/offTargets_processing_utils.R")
+#source("./utils/offTargets_processing_utils.R")
 
 # ------------------- UI -------------------
 

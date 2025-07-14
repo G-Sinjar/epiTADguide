@@ -40,7 +40,7 @@ filter_by_detectionP <- function(normalized_object, RGset) {
     message("Applying detection P-value filtering using probe name intersection (likely S4 object or mismatch).")
     message("This might take a moment if the object is large or probe names mismatch extensively.")
     # This is the more robust path, using setdiff for name-based filtering
-    probes_to_keep <- setdiff(normalized_object_probe_names, unreliable_probe_names)
+    probes_to_keep <-  base::setdiff(normalized_object_probe_names, unreliable_probe_names)
     filtered_object <- normalized_object[probes_to_keep, ]
   }
   

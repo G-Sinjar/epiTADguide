@@ -121,9 +121,10 @@ filter_data_ui <- function(id) {
 #' @param RGset The RGChannelSet object from minfi.
 #' @param raw_normalised The reactive expression holding the raw normalized data.
 #' @param normalized_all_methods A reactive expression holding a list containing all normalized methods data.
+#' @param project_output_dir A reactive expression for the project's output directory. 
 #' @return A list of reactive values: `filtered_data` (the final GenomicRatioSet), `beta_vals`, and `m_vals`.
 
-filter_data_server <- function(id, RGset, raw_normalised, normalized_all_methods) {
+filter_data_server <- function(id, RGset, raw_normalised, normalized_all_methods, project_output_dir) {
   moduleServer(id, function(input, output, session) {
     shinyjs::useShinyjs()
     
@@ -301,9 +302,9 @@ filter_data_server <- function(id, RGset, raw_normalised, normalized_all_methods
         filtered_grset(ratio_geno) # Store the final filtered object
         
         
-        '# Save automatically with descriptive name
+        # Save automatically with descriptive name
         # 1. Normalization method
-        norm_method_label <- switch(input$norm_method, # <--- Renamed to avoid confusion
+        norm_method_label <- switch(input$norm_method, 
                                     "raw_normalised" = "Raw",
                                     "SWAN" = "SWAN",
                                     "Quantile" = "Quantile",
@@ -336,18 +337,18 @@ filter_data_server <- function(id, RGset, raw_normalised, normalized_all_methods
           ".rds"
         )
         
-        output_dir <- "./intermediate_data"
-        if (!dir.exists(output_dir)) {
-          dir.create(output_dir, recursive = TRUE)
+        output_dir_full <- file.path(project_output_dir(), "intermediate_data") 
+        if (!dir.exists(output_dir_full)) {
+          dir.create(output_dir_full, recursive = TRUE)
         }
-        file_path <- file.path(output_dir, file_name)
+        file_path <- file.path(output_dir_full, file_name)
         
         tryCatch({
           saveRDS(filtered_grset(), file = file_path)
           status(paste0(status(), "\n✅ Filtered GenomicRatioSet automatically saved to: ", file_path))
         }, error = function(e) {
           status(paste0(status(), "\n❌ Error automatically saving RDS: ", e$message))
-        })'
+        })
         # --- End of Automatic Saving ---
       })
     })
@@ -429,7 +430,7 @@ filter_data_server <- function(id, RGset, raw_normalised, normalized_all_methods
 
 '# test module
 # Sources:
-#source("./utils/preprocessing_utils.R")
+source("../utils/preprocessing_utils.R")
 # ───────────────────────────────────────────────────────────────────────
 ui <- page_navbar(
   title = "EPIC Array Pipeline",
@@ -442,27 +443,29 @@ ui <- page_navbar(
 # Corrected test module server
 server <- function(input, output, session) {
   # Load your data first
-  normalized_all_methods_list <- readRDS("C:/Users/ghaza/Documents/ghazal/Bioinformatik_Fächer/Masterarbeit_Project/Scripts/R_Scripts/intermediate_data/normalised_all_methods.rds")
-  preprocessed_data <- readRDS("C:/Users/ghaza/Documents/ghazal/Bioinformatik_Fächer/Masterarbeit_Project/Scripts/R_Scripts/intermediate_data/preprocessed_data.rds")
+  # Ensure these paths are correct for your environment
+  all_normalized_methods_data <- readRDS("C:/Users/ghaza/Documents/ghazal/Bioinformatik_Fächer/Masterarbeit_Project/Scripts/R_Scripts/intermediate_data/normalised_all_methods.rds")
+  preprocessed_data_object <- readRDS("C:/Users/ghaza/Documents/ghazal/Bioinformatik_Fächer/Masterarbeit_Project/Scripts/R_Scripts/intermediate_data/preprocessed_data.rds")
+  project_base_path <- "./epic-test"
   
-# IMPORTANT: Make sure the values returned by these reactives match what the module expects.
-# For RGset, it should be an RGChannelSet.
-# For raw_normalised, it should be the preprocessed raw_normalized data (e.g., MethylSet or GenomicRatioSet).
-# For normalized_all_methods, it should be the list of all normalized datasets.
-
-  reactive_RGset <- reactive({ preprocessed_data$RGset })
-  reactive_raw_normalised <- reactive({ preprocessed_data$raw_normalised })
-  reactive_normalized_all_methods <- reactive({ normalized_all_methods_list })
-
-# Pass the reactive expressions to the module server
-# Do NOT call them with () here. Pass the reactive object itself.
+  
+  # Create reactive expressions for each required input of the module
+  reactive_RGset <- reactive({ preprocessed_data_object$RGset })
+  reactive_raw_normalised <- reactive({ preprocessed_data_object$raw_normalised })
+  reactive_normalized_all_methods_list <- reactive({ all_normalized_methods_data })
+  reactive_project_output_dir <- reactive({ project_base_path }) 
+  
+  
+  
   filtered_output <- filter_data_server(
-    "myFilterModule", 
-    RGset = reactive_RGset, 
-    raw_normalised = reactive_raw_normalised, 
-    normalized_all_methods = reactive_normalized_all_methods
+    "myFilterModule",
+    RGset = reactive_RGset,
+    raw_normalised = reactive_raw_normalised,
+    normalized_all_methods = reactive_normalized_all_methods_list,
+    project_output_dir = reactive_project_output_dir
   )
   
 }
+
 
 shinyApp(ui = ui, server = server)'

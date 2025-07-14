@@ -22,10 +22,7 @@ library(EnsDb.Hsapiens.v86)
 library(readr) # For read_delim
 library(dplyr) # For data manipulation
 
-# Source the utility file (plotting and GRanges creation functions)
-# IMPORTANT: Ensure this path is correct relative to where 10_GVIZ_plot_Module.R is run.
-# Also, ensure you have manually commented out the 'groups' line in plotGvizTracks in this file.
-#source("../utils/GVIZ_plot_utils.R")
+
 
 
 # ─────────────────────────────────────
@@ -151,7 +148,7 @@ GvizPlotServer <- function(id,
       
       # Now, get the INNER reactiveVal's value. 
       # This means calling the result of the first call, like this:
-      df_offtargets <- offtarget_table()() 
+      df_offtargets <- offtarget_table()#() 
       
       req(df_offtargets) # Ensure the data.frame is not NULL
       
@@ -243,7 +240,7 @@ GvizPlotServer <- function(id,
       req(current_chr_for_subtad)
       print(paste("Reactive: gr_SUBTADs is calculating for chromosome", current_chr_for_subtad, "..."))
       tryCatch({
-        gr <- create_gr_TADs_SUBTADs(subtad_table(), chr = current_chr_for_subtad) # CORRECTED: dynamic chr
+        gr <- create_gr_TADs_SUBTADs(subtad_table(), chr = current_chr_for_subtad) 
         print(paste("Reactive: gr_SUBTADs created with", length(gr), "SubTADs."))
         gr
       }, error = function(e) {
@@ -289,7 +286,7 @@ GvizPlotServer <- function(id,
       
       print(paste("Reactive: selected_chr_length calculating for", chr_name))
       
-      len <- chr_size_df_global %>% filter(Chromosome == chr_name) %>% pull(Length)
+      len <- chr_size_df_global %>% dplyr::filter(Chromosome == chr_name) %>% pull(Length)
       print(paste("Reactive: selected_chr_length for", chr_name, "is", len))
       len
     })
@@ -453,7 +450,7 @@ GvizPlotServer <- function(id,
         current_chr_name <- as.character(seqnames(selected_gr))
         pad <- 2000
         # Use chr_size_df_global as it's passed as an argument/global
-        chr_len <- chr_size_df_global %>% filter(Chromosome == current_chr_name) %>% pull(Length)
+        chr_len <- chr_size_df_global %>% dplyr::filter(Chromosome == current_chr_name) %>% pull(Length)
         if (length(chr_len) == 0) {
           message("Error: Chromosome length not found for ", current_chr_name)
           showNotification(paste("Chromosome length not found for", current_chr_name), type = "warning")
@@ -490,8 +487,13 @@ GvizPlotServer <- function(id,
         local_from <- input$from
         local_to <- input$to
         local_chr <- if (input$region_type == "Desired targeted region") {
+          # ADDED CHECK if chr is entered by the user or not
+          if (is.null(input$chromosome) || input$chromosome == "") {
+            showNotification("Please enter a chromosome name for 'Desired targeted region'.", type = "error", duration = 5)
+            return(NULL) # Return NULL to stop further execution in this observeEvent/reactive
+          }
           input$chromosome
-        } else {
+        }else {
           # Get the chromosome from the currently selected region_choice
           if (input$region_type == "DMRs") {
             req(gr_dmrs())
@@ -522,7 +524,7 @@ GvizPlotServer <- function(id,
         
         # Validate against chromosome length
         # Re-fetch chromosome length based on local_chr for robustness
-        current_chr_len_for_plot <- chr_size_df_global %>% filter(Chromosome == local_chr) %>% pull(Length)
+        current_chr_len_for_plot <- chr_size_df_global %>% dplyr::filter(Chromosome == local_chr) %>% pull(Length)
         if (length(current_chr_len_for_plot) == 0 || is.na(current_chr_len_for_plot) || local_from < 1 || local_to > current_chr_len_for_plot) {
           showNotification(paste0("Range out of bounds for chromosome '", local_chr, "'. Max length: ", current_chr_len_for_plot), type = "error")
           return()
@@ -575,7 +577,7 @@ GvizPlotServer <- function(id,
         
         # Re-validate the range against the chromosome length for the *current* plot.
         # This should theoretically pass if selectedRange and selectedChr were set correctly by create_plot.
-        current_chr_len_for_plot <- chr_size_df_global %>% filter(Chromosome == chr) %>% pull(Length)
+        current_chr_len_for_plot <- chr_size_df_global %>% dplyr::filter(Chromosome == chr) %>% pull(Length)
         
         validate(
           need(from < to, "'From' must be less than 'To'. This indicates an internal error if 'Create Plot' passed."),
@@ -673,7 +675,7 @@ GvizPlotServer <- function(id,
     observeEvent(input$zoom_in, {
       print("ObserveEvent: 'Zoom In' button clicked.")
       req(selectedRange()[1], selectedRange()[2], selectedChr()) # Ensure a plot is already rendered
-      current_chr_len <- chr_size_df_global %>% filter(Chromosome == selectedChr()) %>% pull(Length)
+      current_chr_len <- chr_size_df_global %>% dplyr::filter(Chromosome == selectedChr()) %>% pull(Length)
       req(current_chr_len) # Ensure chromosome length is available
       
       current_from <- selectedRange()[1]
@@ -703,7 +705,7 @@ GvizPlotServer <- function(id,
     observeEvent(input$zoom_out, {
       print("ObserveEvent: 'Zoom Out' button clicked.")
       req(selectedRange()[1], selectedRange()[2], selectedChr())
-      current_chr_len <- chr_size_df_global %>% filter(Chromosome == selectedChr()) %>% pull(Length)
+      current_chr_len <- chr_size_df_global %>% dplyr::filter(Chromosome == selectedChr()) %>% pull(Length)
       req(current_chr_len)
       
       current_from <- selectedRange()[1]
@@ -725,7 +727,7 @@ GvizPlotServer <- function(id,
     observeEvent(input$go_left, {
       print("ObserveEvent: 'Go Left' button clicked.")
       req(selectedRange()[1], selectedRange()[2], selectedChr())
-      current_chr_len <- chr_size_df_global %>% filter(Chromosome == selectedChr()) %>% pull(Length)
+      current_chr_len <- chr_size_df_global %>% dplyr::filter(Chromosome == selectedChr()) %>% pull(Length)
       req(current_chr_len)
       
       current_from <- selectedRange()[1]
@@ -748,7 +750,7 @@ GvizPlotServer <- function(id,
     observeEvent(input$go_right, {
       print("ObserveEvent: 'Go Right' button clicked.")
       req(selectedRange()[1], selectedRange()[2], selectedChr())
-      current_chr_len <- chr_size_df_global %>% filter(Chromosome == selectedChr()) %>% pull(Length)
+      current_chr_len <- chr_size_df_global %>% dplyr::filter(Chromosome == selectedChr()) %>% pull(Length)
       req(current_chr_len)
       
       current_from <- selectedRange()[1]
@@ -787,6 +789,8 @@ GvizPlotServer <- function(id,
 '# ─────────────────────────────────────
 # Main Shiny App (app.R equivalent)
 # ─────────────────────────────────────
+source("../utils/GVIZ_plot_utils.R")
+
 # This is a static object that will be passed to the DMR module
 message("Loading/Preparing tx_gr_filtered for annotation...")
 edb <- EnsDb.Hsapiens.v86

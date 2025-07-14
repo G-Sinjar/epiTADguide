@@ -74,20 +74,18 @@ tadcalling_ui <- function(id) {
 }
 
 # Module Server
-tadcalling_server <- function(id) {
+# ─────────────────────────────────────
+# SERVER FUNCTION
+# ─────────────────────────────────────
+#' @param id Module ID.
+#' @param project_output_dir A reactive expression for the project's main output directory path.
+#' @return A list of reactive expressions containing the processed TADs and SubTADs data frames.
+tadcalling_server <- function(id,project_output_dir = NULL) {
   moduleServer(id, function(input, output, session) {
-    # It's generally good practice to put library calls relevant to the module's function
-    # inside moduleServer or ensure they are loaded in the global app environment.
-    # We'll assume they are loaded by the main app for now, but uncomment if testing standalone.
-    # library(reticulate)
-    # library(processx)
-    # library(readr)
-    # library(openxlsx)
-    # library(DT)
     
     # Set up Python environment (assuming this path is globally valid or relative to app root)
     use_virtualenv("shiny_py", required = TRUE)
-    source_python("../PythonProject/1-Hi-c_maps_exploring.py")
+    source_python("./python_scripts/1-Hi-c_maps_exploring.py")
     
     # Reactive values to store status messages and generated dataframes
     status_msg <- reactiveVal(
@@ -106,6 +104,8 @@ tadcalling_server <- function(id) {
     current_tissue_rv <- reactiveVal(NULL)
     current_chrom_rv <- reactiveVal(NULL)
     current_resolution_rv <- reactiveVal(NULL)
+    current_java_memory_rv <- reactiveVal(NULL) # New reactive value for Java memory
+    new_mcool_path_rv <- reactiveVal(NULL) # NEW: Reactive value for the copied mcool path
     
     output$status_card <- renderUI({
       msg <- status_msg()
@@ -131,14 +131,13 @@ tadcalling_server <- function(id) {
       # Wrap the entire analysis process in withProgress
       withProgress(message = 'TAD Calling in Progress', value = 0, {
         
-        status_msg("Step 1: Processing Hi-c map (.mcool file) to extract contact matrix of the chosen chr and resolution...")
-        
         # Capture current input values immediately
         current_tissue <- input$tissue
         current_chromosome <- input$chromosome
         current_resolution <- input$resolution
         current_mcool_path <- input$mcool_path
         current_java_memory <- input$java_memory
+        
         
         # Input Validation - use the captured current_ values
         missing_inputs <- c()
@@ -164,7 +163,7 @@ tadcalling_server <- function(id) {
         resolution_val <- current_resolution
         mcool_path_val <- current_mcool_path
         java_memory_val <- current_java_memory
-        
+        print(mcool_path_val)
         # 1. Normalize chromosome input
         chrom_temp <- gsub("^chr", "", chromosome_val, ignore.case = TRUE)
         
@@ -177,10 +176,85 @@ tadcalling_server <- function(id) {
         
         
         # 2. Normalize mcool path
-        mcool_path <- gsub("\\\\", "/", mcool_path_val)
+        base_project_dir_val <- if (!is.null(project_output_dir)) project_output_dir() else NULL
+        
+        # Ensure project_output_dir is an absolute path for consistency
+        if (!is.null(base_project_dir_val) && base_project_dir_val != "") {
+          base_project_dir_val <- normalizePath(base_project_dir_val, winslash = "/", mustWork = FALSE)
+        }
+        
+        # Normalize mcool_path_val: Ensure it has a .mcool extension
+        if (!grepl("\\.mcool$", mcool_path_val, ignore.case = TRUE)) {
+          mcool_path_val <- paste0(mcool_path_val, ".mcool")
+          status_msg(paste0(status_msg(),"<br>ℹ️ Appended '.mcool' extension to input path: "))
+        }
+
+        # Determine the final mcool_path that the Python script will use
+        mcool_path <- "" 
+        
+        if (!is.null(base_project_dir_val) && base_project_dir_val != "") {
+          # Define the base directory for all TADcaller results within the project output
+          tadcaller_base_output_dir <- file.path(base_project_dir_val, "TADcaller_results")
+          
+          # Extract filename and filename without extension
+          mcool_filename <- basename(mcool_path_val)
+          print(mcool_filename) # Debug print
+          mcool_filename_no_ext <- tools::file_path_sans_ext(mcool_filename)
+          print(mcool_filename_no_ext) # Debug print
+          
+          # Create the specific subfolder named after the mcool file
+          specific_mcool_output_dir <- file.path(tadcaller_base_output_dir, mcool_filename_no_ext)
+          print(specific_mcool_output_dir) # Debug print
+          
+          # Ensure this new specific directory exists
+          if (!dir.exists(specific_mcool_output_dir)) {
+            dir.create(specific_mcool_output_dir, recursive = TRUE)
+            status_msg(paste0(status_msg(),"<br>📁 Created directory for .mcool file: ", specific_mcool_output_dir))
+            print(paste(specific_mcool_output_dir, "doesnt excists so it is created")) # Debug print
+          }
+          
+          # Define the full new path for the copied mcool file
+          new_mcool_path_for_copy <- file.path(specific_mcool_output_dir, mcool_filename) # Corrected variable name here
+          print(new_mcool_path_for_copy) # Debug print
+          
+          # --- DEBUGGING FILE.COPY ---
+          print(paste("DEBUG: Source mcool_path_val (after extension check):", mcool_path_val))
+          print(paste("DEBUG: Does source file exist?", file.exists(mcool_path_val)))
+          print(paste("DEBUG: Destination for copy:", new_mcool_path_for_copy))
+          print(paste("DEBUG: Does destination directory exist?", dir.exists(dirname(new_mcool_path_for_copy))))
+          
+          copy_success <- FALSE
+          if (file.exists(mcool_path_val)) {
+            # Ensure 'to' argument is correct here. It should be new_mcool_path_for_copy
+            copy_success <- file.copy(from = mcool_path_val, to = new_mcool_path_for_copy, overwrite = TRUE)
+          } else {
+            status_msg(paste0(status_msg(),"<br>❌ Error: Original .mcool file not found at: ", mcool_path_val))
+            return(NULL) # Stop execution if source file is missing
+          }
+          
+          if (copy_success) {
+            status_msg(paste0(status_msg(),"<br>🔄 Copied .mcool file to project output directory: ", new_mcool_path_for_copy))
+            mcool_path <- gsub("\\\\", "/", new_mcool_path_for_copy) # Update mcool_path to the copied file
+            new_mcool_path_rv(mcool_path)
+          } else {
+            status_msg(paste0(status_msg(),"<br>❌ Error: Failed to copy .mcool file from '", mcool_path_val, "' to '", new_mcool_path_for_copy, "'. Check permissions and paths."))
+            return(NULL) # Stop execution if copy failed
+          }
+          # --- END DEBUGGING FILE.COPY ---
+          
+        } else {
+          # If project_output_dir is null, use the original mcool_path and normalize slashes
+          mcool_path <- gsub("\\\\", "/", mcool_path_val)
+          status_msg(paste0(status_msg(),"<br>ℹ️ Using original .mcool file path: ", mcool_path))
+          new_mcool_path_rv(mcool_path)
+        }
+        
+        # Print the final mcool_path that will be passed to Python
+        print(paste("DEBUG: Final mcool_path passed to Python:", mcool_path))
+        print(paste("DEBUG: Does final mcool_path exist?", file.exists(mcool_path)))
         
         incProgress(0.1, detail = "Starting Step 1: Processing .mcool file")
-        
+        status_msg("Step 1: Processing Hi-c map (.mcool file) to extract contact matrix of the chosen chr and resolution...")
         # Step 1: Process .mcool file using Python
         python_step_success <- FALSE
         result <- NULL
@@ -223,6 +297,7 @@ tadcalling_server <- function(id) {
         current_tissue_rv(tissue_val)
         current_chrom_rv(chrom)
         current_resolution_rv(resolution_val)
+        current_java_memory_rv(java_memory_val) 
         
         if (!dir.exists(results_root_folder)) dir.create(results_root_folder, recursive = TRUE)
         if (!dir.exists(java_raw_output_dir)) dir.create(java_raw_output_dir, recursive = TRUE)
@@ -385,33 +460,16 @@ tadcalling_server <- function(id) {
     # Return a list of reactive values that the parent app can access
     return(list(
       tads_table = tads_df_rv,
-      subtads_table = subtads_df_rv
+      subtads_table = subtads_df_rv,
+      current_tissue = current_tissue_rv,
+      current_chrom = current_chrom_rv,
+      current_resolution = current_resolution_rv,
+      processed_output_dir = processed_tads_output_dir_rv, 
+      java_memory_used = current_java_memory_rv,             
+      copied_mcool_path = new_mcool_path_rv
       #status_message = status_msg # Optionally return status if parent needs to monitor
     ))
   })
 }
 
-
-# app.R (Main Shiny Application - Minimal Host for TADcalling Module)
-# library(shiny)
-# library(bslib)
-# # they should be loaded within tadcalling_module.R or a global setup script.
-
-# # Source the utility functions
-# source("../utils/TADcalling_utils.R")
-
-# ui <- page_navbar(
-#   title = "EPIC Array Pipeline",
-#   theme = bs_theme(version = 5, bootswatch = "flatly"),
-
-#   nav_panel(
-#     "TAD Calling Analysis",
-#     tadcalling_ui("my_tad_analysis_module")
-#   )
-# )
-
-# server <- function(input, output, session) {
-#   tad_results <- tadcalling_server("my_tad_analysis_module")
-# }
-
-# shinyApp(ui, server)
+#the test code of this module is in the R_scrips called 09-test.R
