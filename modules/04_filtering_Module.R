@@ -270,7 +270,7 @@ filter_data_server <- function(id, RGset, raw_normalised, normalized_all_methods
         remove_chrs <- input$remove_sex_chr
         if (length(remove_chrs) > 0) {
           status(paste(status(), "\nStep 6: Removing probes on:", paste(remove_chrs, collapse = ", ")))
-          gr <- rowRanges(ratio_geno)
+          gr <-  SummarizedExperiment::rowRanges(ratio_geno)
           ratio_geno <- ratio_geno[!(seqnames(gr) %in% remove_chrs), ]
           status(paste(status(), "\n✅ Removed:", paste(remove_chrs, collapse = ", ")))
         } else {

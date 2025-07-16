@@ -338,32 +338,6 @@ plotGvizTracks <- function(tracks, from, to) {
 #plotGvizTracks(tracks = tracks, from = 95551415, to = 95554041)
 #----------------------------------------------------------------------------------------
 
-# utils_genome_helpers.R
-
-# Load once at top of the app or where utilities are loaded
-library(BSgenome.Hsapiens.UCSC.hg38)
-library(GenomeInfoDb)
-
-# Generate chromosome size table for hg38
-hg38 <- BSgenome.Hsapiens.UCSC.hg38
-chr_lengths <- seqlengths(hg38)
-
-chr_size_df <- data.frame(
-  Chromosome = names(chr_lengths),
-  Length = as.numeric(chr_lengths),
-  stringsAsFactors = FALSE
-)
-
-# Helper function to get chromosome size
-get_chr_max <- function(chr_name) {
-  if (chr_name %in% chr_size_df$Chromosome) {
-    chr_size_df$Length[chr_size_df$Chromosome == chr_name]
-  } else {
-    Inf  # fallback if chromosome name is invalid
-  }
-}
-
-#-----------------------------------------------------------------------------
 #' Find Chromosomes with TAD and SubTAD Tables in a Given Path and Check for a Specific Chromosome
 #'
 #' This function scans a specified directory for TAD and SubTAD files

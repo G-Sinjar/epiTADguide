@@ -26,10 +26,10 @@ source("utils/preprocessing_utils.R")
 source("modules/07_boxplots_Module.R")
 source("utils/dmrs_boxplot_utils.R")
 source("modules/08_offspotter_results_processing_module.R")
-source("modules/09_TADcalling_module.R")
+source("modules/09_TADcalling_module_V1_all_Chr.R")
 source("utils/TADcalling_utils.R")
 source("utils/GVIZ_plot_utils.R")
-source("modules/10_GVIZ_plot_Module.R")
+source("modules/10_GVIZ_plot_Module_V1.R")
 
 
 
@@ -144,7 +144,7 @@ server <- function(input, output, session) {
     shinyjs::disable("to_boxplots")
     shinyjs::disable("to_offtargets")
     #shinyjs::disable("to_tadcalling") # commented cause it can work without off-targets -> they wont be ploted if not available but every thing else will be
-    #shinyjs::disable("to_gvizplot")   # commented cause it can work without tads -> they wont be ploted if not available but every thing else will be
+    shinyjs::disable("to_gvizplot")   
   })
   
   normalized_output <- reactiveVal(NULL)
@@ -201,10 +201,9 @@ server <- function(input, output, session) {
                                       targets = reactive({ loaded_data$targets() }),
                                       project_output_dir = reactive({ loaded_data$project_dir() })
     )
-    normalized_output(norm_results_local) # Store the results in the reactiveVal
-    
+    normalized_output(norm_results_local) 
+  
     # Enable "Next -> Filtering" button only when normalized_output has data
-    # Removed `once = TRUE`
     observe({
       if (!is.null(normalized_output())) {
         shinyjs::enable("to_filter")
@@ -233,9 +232,8 @@ server <- function(input, output, session) {
     filter_results(res)
     
     # Enable "Next -> Annotation" button only when filter_results has data
-    # Removed `once = TRUE`
     observe({
-      if (!is.null(filter_results()$filtered_data())) { # Assuming filter_results() will be non-NULL upon successful filtering
+      if (!is.null(filter_results()$filtered_data())) { 
         shinyjs::enable("to_annot")
       } else {
         shinyjs::disable("to_annot")
@@ -311,21 +309,19 @@ server <- function(input, output, session) {
     enable_tab("Offtargets Import") # just in case, enable tab
     updateNavbarPage(session, "main_tabs", selected = "Offtargets Import")
   })
-    # Define the reactive project directory for this module call
   project_dir_for_offtargets <- reactive({ # Renamed from tadcalling to be clear
-      if (!is.null(loaded_data$project_dir())) {
-        loaded_data$project_dir()
-      } else {
-        NULL # Pass NULL if not available, which triggers the module's fallback
-      }
-  })
-    # Initialize the offtargetsServer module and store its reactive outputs
-    # This line is corrected to store the *list of reactive outputs* into the reactiveVal
+    if (!is.null(loaded_data$project_dir())) {
+      loaded_data$project_dir()
+    } else {
+      NULL # Pass NULL if not available, which triggers the module's fallback
+    }
+  })  # Initialize the offtargetsServer module and store its reactive outputs
   offtargets_results_returned <- offtargetsServer(
-      "myOfftargetModule",
-      project_output_dir = project_dir_for_offtargets
+      id = "myOfftargetModule",
+      project_output_dir=  project_dir_for_offtargets
   )
-    # Assign the returned list of reactives to the reactiveVal
+  
+  # Assign the returned list of reactives to the reactiveVal
   offtargets_results(offtargets_results_returned)
   shinyjs::enable("to_tadcalling")
 
@@ -336,8 +332,6 @@ server <- function(input, output, session) {
     enable_tab("TAD Calling") # Enable the TAD Calling tab
     updateNavbarPage(session, "main_tabs", selected = "TAD Calling")
   })
-  # This is the key change:
-  # Check if loaded_data$project_dir() is available before passing it.
   project_dir_for_tadcalling <- reactive({
     if (!is.null(loaded_data$project_dir())) {
       loaded_data$project_dir()
@@ -345,20 +339,19 @@ server <- function(input, output, session) {
       NULL # Pass NULL if not available, which triggers the module's fallback
     }
   })
-  
   tadcalling_results_local <- tadcalling_server(
     "my_tadcalling_module",
-    project_output_dir = project_dir_for_tadcalling # Pass the conditionally reactive value
+    project_output_dir = project_dir_for_tadcalling
   )
   tadcalling_results(tadcalling_results_local)
   
-  'observe({
-    if (!is.null(tadcalling_results()$tads_table)) {
+  observe({
+    if (!is.null(tadcalling_results()$processed_chroms_list_rv)) {
       shinyjs::enable("to_gvizplot")
     } else {
       shinyjs::disable("to_gvizplot")
     }
-  })'
+  })
   
   
   # --- Navigate to final GVIZ plot tab ---
@@ -372,8 +365,7 @@ server <- function(input, output, session) {
     dmr_results = dmr_results,
     annotation_results = annotation_results,
     offtarget_table = offtargets_results,
-    tad_table = reactive({ tadcalling_results()$tads_table }), # Ensure reactive access
-    subtad_table = reactive({ tadcalling_results()$subtads_table }), # Ensure reactive access
+    tadcalling_results = tadcalling_results,
     chr_size_df_global = chr_size_df_global,
     tx_gr_filtered_global = tx_gr_filtered_global,
     gr_cpgIslands_global = gr_cpgIslands_global

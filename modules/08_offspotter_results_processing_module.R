@@ -214,8 +214,8 @@ offtargetsServer <- function(id, project_output_dir = reactive(NULL)) {
         
         # ✅ Step 6: Save as RDS in project_output_dir/intermediate_data ------------------------
         # ONLY execute if project_output_dir is provided and not NULL
-        if (!is.null(project_output_dir()) && !is.null(project_output_dir()())) { # Check both reactive and its value
-          output_dir_full <- file.path(project_output_dir()(), "Off-targets_results") # Access value with ()
+        if (!is.null(project_output_dir())) { 
+          output_dir_full <- file.path(project_output_dir(), "Off-targets_results") 
           if (!dir.exists(output_dir_full)) dir.create(output_dir_full, recursive = TRUE)
           
           # Construct safe filename from guide names and add date
@@ -256,7 +256,7 @@ offtargetsServer <- function(id, project_output_dir = reactive(NULL)) {
     
     output$offtargets_table <- DT::renderDT({
       req(processed_data_df()) 
-      datatable(processed_data_df(), options = list(pageLength = 25, scrollX = TRUE)) 
+      datatable(processed_data_df(), options = list(pageLength = 10, scrollX = TRUE)) 
     })
     
     output$row_count_text <- renderUI({
@@ -299,7 +299,7 @@ offtargetsServer <- function(id, project_output_dir = reactive(NULL)) {
 
 
 
-'# app.R
+# app.R
 
 library(shiny)
 library(DT)
@@ -317,8 +317,7 @@ ui <- page_navbar(
 
 server <- function(input, output, session) {
   # Call the module
-  processed_data <- offtargetsServer("myOfftargetModule")
-                                    # , project_output_dir= reactive({"./epic-test"}))
+  processed_data <- offtargetsServer( id="myOfftargetModule", project_output_dir= reactive({"./epic_test"}))
   
   # Optional: observe or debug what’s returned from the module
   observe({
@@ -328,4 +327,3 @@ server <- function(input, output, session) {
 }
 
 shinyApp(ui = ui, server = server)
-'

@@ -17,6 +17,8 @@ modules/cpgIslandExt_hg38.txt.gz
 hs_err_pid17288.log
 modules/epic-test/
 not used in R_1-Hi-c maps exploring.py
+epic-test/
+epic_test_2/
 #
 # R and IDE temp files
 .RData
