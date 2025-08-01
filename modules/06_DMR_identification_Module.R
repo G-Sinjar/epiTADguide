@@ -7,18 +7,6 @@
 # The module outputs an annotated table of detected DMRs, which can be downloaded in CSV or Excel format.
 
 #-------------------------------------------------------------------
-# libraries especially for this module
-library(DT)        # For interactive data tables
-library(openxlsx)
-library(GenomicRanges)
-library(shiny) # Add shiny explicitly here for module to be self-contained in its library requirements
-library(minfi) # Add minfi explicitly here
-library(bslib) # Add bslib explicitly here
-library(EnsDb.Hsapiens.v86)
-# In your app.R or global.R
-library(shinyjs)
-
-
 # ─────────────────────────────────────
 # User Interface (UI) FUNCTION
 # ─────────────────────────────────────
@@ -29,164 +17,33 @@ dmrs_ui <- function(id) {
     sidebar = sidebar(
       width = "300px",
       
-      useShinyjs(), # Important for shinyjs functions to work
+      useShinyjs(), 
       
       # Input: methylation cutoff range
       numericInput(ns("cutoff_from"), "Cutoff from (min -1 to 0):", value = -0.15, min = -1, max = 0, step= 0.01),
       numericInput(ns("cutoff_to"), "Cutoff to (0 to 1):", value = 0.15, min = 0, max = 1, step = 0.01),
       
-      # --- CUTOFF HELP IMPLEMENTATION START ---
+      # --- CUTOFF HELP IMPLEMENTATION ---
       actionLink(ns("toggle_cutoff_help"), "Click for help on cutoff."),
       div(
         id = ns("cutoff_help_text_div"),
         style = "display: none;",
-        helpText("Cutoff defines how large a difference in methylation must be to consider a region a potential DMR.")
+        helpText("The cutoff defines how large a difference in Beta-values (methylation ratio) is needed for a region to be considered a candidate. For example, a cutoff of 0.2 means regions with Beta-value differences greater than ±0.2 (i.e., 20%) between groups will be selected. You can specify one value (symmetric around zero) or two values (asymmetric cutoff).")
       ),
-      # --- CUTOFF HELP IMPLEMENTATION END ---
-      
-      br(),
-      
+
+      #----------------------------------------------------------------
       # Input: number of permutations
       numericInput(ns("B_val"), "Number of permutations (B):", value = 0, min = 0),
       
-      # --- PERMUTATIONS HELP IMPLEMENTATION START ---
+      # --- PERMUTATIONS HELP IMPLEMENTATION ---
       actionLink(ns("toggle_B_help"), "Click for help on permutations."),
       div(
         id = ns("B_help_text_div"),
         style = "display: none;",
         helpText("B controls the number of permutations used to assess significance, reducing false positives. More permutations = higher accuracy.")
       ),
-      # --- PERMUTATIONS HELP IMPLEMENTATION END ---
-      
-      br(), # Add a break for spacing
-      
-      # Core options radio buttons
-      radioButtons(
-        ns("core_choice"),
-        "Choose number of CPU cores:",
-        choices = c(
-          "Detected physical cores - 1" = "auto_cores",
-          "Choose cores manually" = "manual_cores"
-        ),
-        selected = "auto_cores"
-      ),
-      uiOutput(ns("detected_cores_info")), 
-      # New: Numeric input for manual core selection (dynamically rendered)
-      uiOutput(ns("manual_cores_input")),
-      
-      # --- CORE HELP IMPLEMENTATION START ---
-      actionLink(ns("toggle_cores_help"), "Click for help on core choice."),
-      div(
-        id = ns("cores_help_text_div"),
-        style = "display: none;",
-        helpText("This setting controls the number of CPU cores used for calculations. Using more cores can significantly speed up the analysis, especially for larger datasets or when running permutations (B > 0).\n\n",
-                 "  * **'Detected cores - 1'**: Recommended for most users. This option automatically uses all but one of your computer's available CPU cores. This leaves one core free for system operations, preventing your computer from becoming unresponsive.\n",
-                 "  * **'Choose cores manually'**: Allows you to specify an exact number of cores. Use this if you have specific performance requirements or if 'Detected cores - 1' does not suit your needs (e.g., if you want to use fewer cores to save resources for other applications)."
-        )
-      ),
-      # --- CORE HELP IMPLEMENTATION END ---
-      
-      
-      
-      br(), # Add a break for spacing (optional, but can help visual spacing)
-      
-      # Run button
-      actionButton(ns("run_dmr"), "Detect DMRs"),
-      helpText("Note: This step can take at least 5 minutes (B=0). Higher B values will increase runtime. For example B=100 takes 1.5 hours using 6 Cores."),
-      
-      hr(),
-      
-      # Download options and button (only visible when results available)
-      uiOutput(ns("download_ui"))
-    ),
-    
-    # Main output panel
-    div(
-      style = "padding-left: 15px; padding-right: 15px;", # Add right padding for balance
-      layout_columns(
-        col_widths = c(12), # This specifies one column that takes up all 12 Bootstrap columns
-        fill = TRUE, # Make sure the card fills the available space
-        card(
-          card_title("DMR Identification Status"),
-          verbatimTextOutput(ns("dmr_status"), placeholder = TRUE)
-        )
-      ),
-      
-      # Bottom section: DMR Table
-      div(
-        style = "margin-top: 20px;", # Add some space above the table section
-        h4("Detected DMRs"),
-        dataTableOutput(ns("dmr_table")) 
-      )
-    )
-  )
-}
 
-
-# ─────────────────────────────────────
-# SERVER FUNCTION
-# ─────────────────────────────────────
-# 06_DMR_identification_Module.R
-# Author: Ghazal Sinjar
-# Date: 17.06.2025
-# Description:
-# This Shiny module provides UI and server logic for identifying Differentially Methylated Regions (DMRs).
-# It utilizes the bumphunter algorithm to detect DMRs based on specified methylation cutoff values and permutation settings.
-# The module outputs an annotated table of detected DMRs, which can be downloaded in CSV or Excel format.
-
-#-------------------------------------------------------------------
-# libraries especially for this module
-library(DT)         # For interactive data tables
-library(openxlsx)
-library(GenomicRanges)
-library(shiny)      # Add shiny explicitly here for module to be self-contained in its library requirements
-library(minfi)      # Add minfi explicitly here
-library(bslib)      # Add bslib explicitly here
-library(EnsDb.Hsapiens.v86) # Keep this if used by your utility functions or further annotation
-library(shinyjs)    # Ensure shinyjs is loaded
-
-
-# ─────────────────────────────────────
-# User Interface (UI) FUNCTION
-# ─────────────────────────────────────
-dmrs_ui <- function(id) {
-  ns <- NS(id)
-  
-  page_sidebar(
-    sidebar = sidebar(
-      width = "300px",
-      
-      useShinyjs(), # Important for shinyjs functions to work
-      
-      # Input: methylation cutoff range
-      numericInput(ns("cutoff_from"), "Cutoff from (min -1 to 0):", value = -0.15, min = -1, max = 0, step= 0.01),
-      numericInput(ns("cutoff_to"), "Cutoff to (0 to 1):", value = 0.15, min = 0, max = 1, step = 0.01),
-      
-      # --- CUTOFF HELP IMPLEMENTATION START ---
-      actionLink(ns("toggle_cutoff_help"), "Click for help on cutoff."),
-      div(
-        id = ns("cutoff_help_text_div"),
-        style = "display: none;",
-        helpText("Cutoff defines how large a difference in methylation must be to consider a region a potential DMR.")
-      ),
-      # --- CUTOFF HELP IMPLEMENTATION END ---
-      
-      br(),
-      
-      # Input: number of permutations
-      numericInput(ns("B_val"), "Number of permutations (B):", value = 0, min = 0),
-      
-      # --- PERMUTATIONS HELP IMPLEMENTATION START ---
-      actionLink(ns("toggle_B_help"), "Click for help on permutations."),
-      div(
-        id = ns("B_help_text_div"),
-        style = "display: none;",
-        helpText("B controls the number of permutations used to assess significance, reducing false positives. More permutations = higher accuracy.")
-      ),
-      # --- PERMUTATIONS HELP IMPLEMENTATION END ---
-      
-      br(), # Add a break for spacing
-      
+      #-------------------------------------------------------
       # Core options radio buttons
       radioButtons(
         ns("core_choice"),
@@ -211,11 +68,8 @@ dmrs_ui <- function(id) {
                  "  * **'Choose cores manually'**: Allows you to specify an exact number of cores. Use this if you have specific performance requirements or if 'Detected cores - 1' does not suit your needs (e.g., if you want to use fewer cores to save resources for other applications)."
         )
       ),
-      # --- CORE HELP IMPLEMENTATION END ---
-      
-      
-      br(), # Add a break for spacing (optional, but can help visual spacing)
-      
+
+      #-----------------------------------------------------
       # Run button
       actionButton(ns("run_dmr"), "Detect DMRs"),
       helpText("Note: This step can take at least 5 minutes (B=0). Higher B values will increase runtime. For example B=100 takes 1.5 hours using 6 Cores."),
@@ -242,6 +96,7 @@ dmrs_ui <- function(id) {
       div(
         style = "margin-top: 20px;", # Add some space above the table section
         h4("Detected DMRs"),
+        helpText("Note: A Differentially Methylated Region (DMR) containing just one CpG site is equivalent to a Differentially Methylated Position (DMP)."),
         DT::dataTableOutput(ns("dmr_table"))
       )
     )
@@ -524,11 +379,17 @@ dmrs_server <- function(id, filtered_rgset_reactive, tx_gr_filtered_static,proje
 }
 
 
-'# test module
-## libraries in main app
-library(shiny)
-library(minfi)     # For methylation analysis
-library(bslib)     # For Bootstrap 5 theming
+# test module
+# libraries especially for this module
+library(DT)        # For interactive data tables
+library(openxlsx)
+library(GenomicRanges)
+library(shiny) # Add shiny explicitly here for module to be self-contained in its library requirements
+library(minfi) # Add minfi explicitly here
+library(bslib) # Add bslib explicitly here
+library(EnsDb.Hsapiens.v86)
+library(shinyjs)
+
 
 ## load input data
 filtered_rgset <- readRDS("../intermediate_data/filtered_GRset_SWAN_SNPsremoved_SexChrProbes_kept_20250608.rds")
@@ -578,4 +439,3 @@ server <- function(input, output, session) {
                                  project_output_dir = reactive({"./epic-test"}))
 }
 shinyApp(ui, server)
-'

@@ -19,6 +19,8 @@ modules/epic-test/
 not used in R_1-Hi-c maps exploring.py
 epic-test/
 epic_test_2/
+main_app_tests/
+modules/epic_test/
 #
 # R and IDE temp files
 .RData

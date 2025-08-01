@@ -6,18 +6,6 @@
 # Filtering includes detection P-value thresholding, removal of SNP-affected probes, and exclusion of sex chromosome probes.
 # It outputs filtered GenomicRatioSet along with beta and M values and saves them automatically.
 
-# ───────────────────────────────────────────────────────────────────────
-# LIBRARIES
-library(shiny)
-library(bslib)
-library(writexl)
-library(openxlsx)
-library(DT)
-library(minfi)
-library(GenomicRanges)
-library(shinyjs)
-# ───────────────────────────────────────────────────────────────────────
-
 
 
 # ─────────────────────────────────────
@@ -51,11 +39,11 @@ filter_data_ui <- function(id) {
       
       # Checkbox: remove SNPs
       checkboxInput(
-        inputId = ns("remove_snps"), # Namespaced ID
+        inputId = ns("remove_snps"), 
         label = "Remove SNPs",
         value = TRUE
       ),
-      helpText("Toggle on to remove SNP-affected probes."),
+      helpText("Probes with known SNPs either at the targeted CpG site or at the Single Base Extension (SBE) site — the base immediately following the CpG site — are flagged for removal."),
       
       br(),
       
@@ -76,6 +64,7 @@ filter_data_ui <- function(id) {
       selectInput(ns("value_type"), "Choose value table to view:", 
                   choices = c("Beta values", "M values"),
                   selected = "Beta values"),
+      helpText(" Both β-value and M-value have been used as metrics to measure methylation levels. "),
       br(),
       
       # Format selection (shared for both tables)
@@ -95,19 +84,19 @@ filter_data_ui <- function(id) {
         col_widths = c(6, 6),
         card(
           card_title("Filtering Status"),
-          verbatimTextOutput(ns("filter_status")) # Namespaced ID
+          verbatimTextOutput(ns("filter_status")) 
         ),
         card(
           card_title("Summary Statistics"),
-          tableOutput(ns("filter_stats")) # Namespaced ID
+          tableOutput(ns("filter_stats")) 
         )
       ),
       
       div(
-        h5(textOutput(ns("value_table_title"))), # Namespaced ID
-        tags$small(em("Use | for searching multiple CpGs. e.g: cg00000029|cg00000108")),
+        h5(textOutput(ns("value_table_title"))),
+        helpText(textOutput(ns("value_table_help"))), 
         br(),
-        DTOutput(ns("value_table")) # Namespaced ID
+        DTOutput(ns("value_table")) 
       )
     )
   )
@@ -159,6 +148,7 @@ filter_data_server <- function(id, RGset, raw_normalised, normalized_all_methods
       }
     })
     
+    #--------------------------------------------------
     # Main filtering procedure
     observeEvent(input$run_filtering, {
       save_rds_status_msg("") 
@@ -207,7 +197,7 @@ filter_data_server <- function(id, RGset, raw_normalised, normalized_all_methods
           mapped_n <- nrow(filtered_by_detectionP)
         } else {
           mapped <- tryCatch({
-            mapToGenome(filtered_by_detectionP, mergeManifest = TRUE)
+            mapToGenome(filtered_by_detectionP)
           }, error = function(e) {
             status(paste(status(), "\n❌ Error in Step 2:", e$message))
             return(NULL)
@@ -372,7 +362,8 @@ filter_data_server <- function(id, RGset, raw_normalised, normalized_all_methods
           scrollX = TRUE, # Allows horizontal scrolling for wide tables
           pageLength = 10, # Number of rows to display per page
           lengthMenu = c(10, 25, 50, 100), # Options for number of rows
-          search = list(regex = FALSE, smart = TRUE) # Enable smart search (like your help text)
+          search = list(regex = FALSE, smart = TRUE), 
+          language = list(search = "Search CpGs:")
         ),
         filter = 'top', # Add search filters at the top of each column
         rownames = TRUE # Keep row names (e.g., CpG IDs)
@@ -388,6 +379,16 @@ filter_data_server <- function(id, RGset, raw_normalised, normalized_all_methods
     output$value_table_title <- renderText({
       req(input$value_type)
       input$value_type
+    })
+    
+    output$value_table_help <- renderText({
+      req(input$value_type)
+      
+      if (input$value_type == "Beta values") {
+        "Beta value (β) represents the proportion of methylation at a given CpG site and is widely used due to its biological interpretability. It is calculated as β = Meth / (Meth + Unmeth), where 'Meth' and 'Unmeth' are the intensities measured by methylated and unmethylated probes, respectively. (Xie et al., 2019)"
+      } else {
+        "M-value offers improved statistical validity for differential methylation analysis. It is calculated as M = log2(β / (1 − β)), transforming the bounded β-values into an unbounded scale more suitable for statistical modeling. (Xie et al., 2019)"
+      }
     })
     
     
@@ -429,6 +430,17 @@ filter_data_server <- function(id, RGset, raw_normalised, normalized_all_methods
 
 
 '# test module
+# ───────────────────────────────────────────────────────────────────────
+# LIBRARIES
+library(shiny)
+library(bslib)
+library(writexl)
+library(openxlsx)
+library(DT)
+library(minfi)
+library(GenomicRanges)
+library(shinyjs)
+# ───────────────────────────────────────────────────────────────────────
 # Sources:
 source("../utils/preprocessing_utils.R")
 # ───────────────────────────────────────────────────────────────────────
@@ -446,7 +458,7 @@ server <- function(input, output, session) {
   # Ensure these paths are correct for your environment
   all_normalized_methods_data <- readRDS("C:/Users/ghaza/Documents/ghazal/Bioinformatik_Fächer/Masterarbeit_Project/Scripts/R_Scripts/intermediate_data/normalised_all_methods.rds")
   preprocessed_data_object <- readRDS("C:/Users/ghaza/Documents/ghazal/Bioinformatik_Fächer/Masterarbeit_Project/Scripts/R_Scripts/intermediate_data/preprocessed_data.rds")
-  project_base_path <- "./epic-test"
+  project_base_path <- "./main_app_tests"
   
   
   # Create reactive expressions for each required input of the module

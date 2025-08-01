@@ -8,11 +8,6 @@
 #to download the annotated table in CSV or Excel format.
 
 
-library(shiny)
-library(DT)
-library(minfi)
-library(writexl)
-
 # ─────────────────────────────────────
 # User Interface (UI) FUNCTION
 # ─────────────────────────────────────
@@ -20,7 +15,41 @@ annotationUI <- function(id) {
   ns <- NS(id)
   page_sidebar(
     sidebar = sidebar(
+      width = "350px",
       actionButton(ns("run_annot"), "Run Annotation on filtered data"),
+      
+      # Added help text/note below the action button
+      div(
+        style = "margin-top: 20px; font-size: 0.9em;",
+        h5("Notes for reading the table:"),
+        p(strong("ProbeSeqA, ProbeSeqB:"), " the sequence of the probe; B is for Infinium I beadtypes which has 2 probes instead of one."),
+        p(strong("Type:"), " Infinium Design Type; Infinium I (2 probes/locus) or Infinium II (1 probe/locus)."),
+        p(strong("Next_Base:"), " For Infinium I probes, the nucleotide immediately following the CpG. Blank for Infinium II."),
+        p(strong("Color:"), " For Infinium I probes, the color channel of the 'Next_Base' signal."),
+        p(strong("Strand_CO:"), "refers to whether the probe is designed to target the originally bisulfite converted DNA strand, or the strand resulting from amplification of the originally converted DNA strand.
+Examples of converted/unconverted designations: Converted strand = C, Opposite strand = O."),
+        p(strong("Probe_rs:"), " rsid(s) of SNP(s) located ", strong("within the probe sequence"), " itself. This SNP may affect probe binding or measurement."),
+        p(strong("CpG_rs:"), " rsid(s) of SNP(s) ", strong("at the CpG site"), " targeted by the probe (where methylation is measured). Blanck if SNPs are removed in previous step."),
+        p(strong("SBE_rs:"), " rsid(s) of SNP(s) ", strong("at the Single Base Extension (SBE) site."), " This site is relevant in the chemistry of the assay, affecting signal detection. Blanck if SNPs are removed in previous step."),
+        p(strong("...maf:"), " The minor allele frequency (MAF) of the SNP within the probe sequence. This tells how common the SNP is in the population."),
+        p(strong("Island_Name:"), " Chromosomal coordinates of the CpG Island from UCSC."),
+        p(strong("Relation_to_Island:"), " The location of the CpG relative to the CpG island."),
+        p(
+          style = "padding-left: 20px;",
+          "Shore = 0-2 kb from island.", br(),
+          "Shelf = 2-4 kb from island.", br(),
+          "N = upstream (5') of CpG island.", br(),
+          "S = downstream (3') of CpG island"
+        ),
+        p(strong("Probe_Type:"), " Probe type: cg=CpG, nv=nucleotide variant, rs=dbSNP rsID, ch=Cp<nonG base>"),
+        
+        p(strong("UCSC_RefGene:"), " UCSC RefGene (-Group, -Name, -Accession)"),
+        p(strong("Gencode:"), " Gencode (-Group, -Name, -Accession)"),
+        p(strong("Regulatory_Feature_Group:"), " Predicted regulatory elements."),
+        p(strong("Methyl450K_Enhancer:"), " Predicted enhancer elements as annotated in the original 450K design are marked 'True'."),
+        p(strong("Methyl...._Loci:"), " CpG name if CpG's carried over from other HumanMethylation arrays."),
+        p("The last few columns, with the sample names as headers, represent the ", strong("beta values"), " of each probe in that sample.")        
+      ),
       hr(),
       radioButtons(ns("download_format"), "Choose format:", choices = c("CSV", "Excel"), inline = TRUE),
       downloadButton(ns("download_data"), "Download Table")
@@ -28,7 +57,6 @@ annotationUI <- function(id) {
     DTOutput(ns("annot_table"))
   )
 }
-
 
 
 # ─────────────────────────────────────
@@ -46,7 +74,8 @@ annotationServer <- function(id, grset_reactive, project_output_dir) {
     annotation_obj <- reactiveVal(NULL)
     annot_df <- reactiveVal(NULL)
     temp_file <- reactiveVal(NULL)
-    
+  
+    #-----------------------------------------
     observeEvent(input$run_annot, {
       req(grset_reactive())
       #req(project_output_dir())
@@ -59,15 +88,24 @@ annotationServer <- function(id, grset_reactive, project_output_dir) {
         return(NULL)
       }
       
+      #--------------------------------
       withProgress(message = "Running annotation steps...", value = 0, {
         incProgress(0.2, detail = "Step 1: Getting annotation...")
         annotation <- getAnnotation(current_grset)
         annotation_obj(annotation)
         annotation_df <- as.data.frame(annotation)
+        # Specify columns to remove
+        cols_to_remove <- c(
+          "AddressA", "AddressB", "Strand_FR", "Strand_TB", "col", "Infinium_Design", "Regulatory_Feature_Group","Rep_Num", 
+          "Manifest_probe_match", "Phantom5_Enhancers", "HMM_Island", "DMR")
         
+        # Drop them if present
+        annotation_df <- annotation_df[, !(colnames(annotation_df) %in% cols_to_remove)]
+        #--------------------------------------------------------------
         incProgress(0.4, detail = "Step 2: Extracting beta values...")
-        beta <- getBeta(current_grset)
+        beta <- round(getBeta(current_grset), 5)
         
+        #------------------------------------------
         incProgress(0.6, detail = "Step 3: Combining data...")
         if (identical(rownames(annotation_df), rownames(beta))) {
           combined_df <- cbind(annotation_df, beta)
@@ -131,11 +169,12 @@ annotationServer <- function(id, grset_reactive, project_output_dir) {
   })
 }
 
-
 '# test
 library(shiny)
 library(bslib)
-
+library(DT)
+library(minfi)
+library(writexl)
 # Load your preprocessed GRanges object
 ratio_geno_Swan_NoSNP <- readRDS("../intermediate_data/filtered_GRset_SWAN_SNP_removed_SexChr_kept_20250605.rds")
 
@@ -153,7 +192,7 @@ ui <- page_navbar(
 server <- function(input, output, session) {
   # Wrap your object as a reactive expression
   grset_reactive <- reactive({ ratio_geno_Swan_NoSNP })
-  path_rc <- reactive({"./epic-test"})
+  path_rc <- reactive({"./main_app_tests"})
   
   # Call the module
   annotated_result <- annotationServer("annot", 

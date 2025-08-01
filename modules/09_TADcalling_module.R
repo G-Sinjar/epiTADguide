@@ -1,5 +1,15 @@
 # modules/9_tadcalling_module.R
 
+# This module provides a user interface for performing TAD (Topologically Associating Domain)
+# calling on Hi-C contact maps. It integrates a Python script for initial data processing
+# from .mcool files and then executes the deDoc2 Java tool for TAD and subTAD identification.
+# The module handles input validation, file management (including copying .mcool files
+# to a project directory), execution of external tools, and displays the processed TAD
+# and subTAD tables within the Shiny application.
+
+# Author: Ghazal Sinjar
+# Date: 29.07.2025
+
 # Load necessary libraries (these should also be in the main app, but good to have here for module testing)
 library(shiny)
 library(bslib)
@@ -97,15 +107,14 @@ tadcalling_server <- function(id,project_output_dir = NULL) {
     subtads_df_rv <- reactiveVal(NULL)
     
     # Reactive values to persist paths and parameters after a successful run
-    # This helps the table_choice observer and also if parent app needs info
     results_root_folder_rv <- reactiveVal(NULL)
     processed_tads_output_dir_rv <- reactiveVal(NULL)
     java_raw_output_dir_rv <- reactiveVal(NULL)
     current_tissue_rv <- reactiveVal(NULL)
     current_chrom_rv <- reactiveVal(NULL)
     current_resolution_rv <- reactiveVal(NULL)
-    current_java_memory_rv <- reactiveVal(NULL) # New reactive value for Java memory
-    new_mcool_path_rv <- reactiveVal(NULL) # NEW: Reactive value for the copied mcool path
+    current_java_memory_rv <- reactiveVal(NULL) 
+    new_mcool_path_rv <- reactiveVal(NULL) 
     
     output$status_card <- renderUI({
       msg <- status_msg()

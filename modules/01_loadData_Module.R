@@ -5,75 +5,6 @@
 # by specifying a path to a directory containing a sample sheet (.csv)
 # and corresponding IDAT files. The data is preprocessed and summarized.
 
-library(shiny)
-library(bslib)
-library(minfi)
-
-# ─────────────────────────────────────
-# User Interface (UI) FUNCTION
-# ─────────────────────────────────────
-
-loadDataUI <- function(id) {
-  ns <- NS(id)
-  
-  layout_sidebar(
-    sidebar = sidebar(
-      # ADDED: Project Name Input
-      strong("1. Set Project Name and Output Directory"),
-      textInput(
-        inputId = ns("project_name"),
-        label = "Enter Project Name:",
-        value = "",
-        placeholder = "E.g. My_EPIC_Study"
-      ),
-      helpText("This name will be used to create a subfolder for all project outputs."),
-      hr(),
-      
-      # Project Output Base Folder Input (now for the *base* directory)
-      textInput(
-        inputId = ns("project_manual_path"),
-        label = "Enter Base Folder Path for Outputs:",
-        value = "",
-        placeholder = "E.g. C:\\Users\\yourname\\Documents\\Shiny_Projects"
-      ),
-      actionButton(ns("check_set_project_path_btn"), "Check and Set Project Path"),
-      helpText("All generated reports and plots will be saved in a subfolder named after your project within this base path."),
-      hr(),
-      
-      # These elements will be conditionally shown
-      uiOutput(ns("conditional_raw_data_input"))
-    ),
-    
-    layout_columns(
-      # Card showing the status of loading process
-      card(
-        card_header("Load Status"),
-        verbatimTextOutput(ns("status"))
-      ),
-      
-      # Card showing the manifest details
-      card(
-        card_header("Array Manifest"),
-        verbatimTextOutput(ns("manifest_output")) # Output for manifest
-      )
-    )
-  )
-}
-
-
-# ─────────────────────────────────────
-# SERVER FUNCTION
-# ─────────────────────────────────────
-# loadDataModule.R
-# Author: Ghazal Sinjar
-# Date: 30.05.2025
-# Description: This Shiny module allows users to load EPIC array data
-# by specifying a path to a directory containing a sample sheet (.csv)
-# and corresponding IDAT files. The data is preprocessed and summarized.
-
-library(shiny)
-library(bslib)
-library(minfi)
 
 # ─────────────────────────────────────
 # User Interface (UI) FUNCTION
@@ -117,10 +48,10 @@ loadDataUI <- function(id) {
         verbatimTextOutput(ns("status"))
       ),
       
-      # Card showing the manifest details
+      # Card showing the array infos details
       card(
-        card_header("Array Manifest"),
-        verbatimTextOutput(ns("manifest_output")) # Output for manifest
+        card_header("Array information"),
+        verbatimTextOutput(ns("arry_info")) 
       )
     )
   )
@@ -238,12 +169,11 @@ loadDataServer <- function(id) {
       
       # 3. Now, handle the project-specific subfolder
       if (!dir.exists(final_project_path)) {
-        append_status(paste0("Attempting to create project directory: ", final_project_path))
         tryCatch({
           dir.create(final_project_path, recursive = TRUE, showWarnings = TRUE) # recursive=TRUE is still good practice
           append_status("✅ Successfully created project directory")
           project_output_dir(final_project_path)
-          append_status("✅ Project output path set successfully.")
+          append_status(paste0("✅ Project output path set successfully.", final_project_path))
           raw_data_input_visible(TRUE) # Show raw data input now
         }, error = function(e) {
           append_status(paste("❌ Error creating project directory:", e$message))
@@ -283,7 +213,7 @@ loadDataServer <- function(id) {
       raw_normalised(NULL)
       targets(NULL)
       
-      status_log(paste0("Loading raw data... (Project output: ", project_output_dir(), ")"))
+      status_log(paste0("Step 1: validating Project output path: ", project_output_dir()))
       # Require both paths to be set
       req(input$manual_path, project_output_dir())
       
@@ -302,7 +232,7 @@ loadDataServer <- function(id) {
           )
           return()
         }
-        append_status("✅ Step 1: Validating raw data path completed.")
+        append_status("✅ Step 1: completed.")
         #incProgress(1/6, detail = "Path validated") # Progress: 1/6
         
         
@@ -322,7 +252,7 @@ loadDataServer <- function(id) {
           return(NULL)
         })
         if (is.null(targets_val)) return()
-        append_status("✅ Step 2: Sample Sheet read.")
+        append_status("✅ Step 2: completed.")
         
         
         # Step 3: Reading IDAT files
@@ -341,27 +271,27 @@ loadDataServer <- function(id) {
           return(NULL)
         })
         if (is.null(RGset_val)) return()
-        append_status("✅ Step 3: IDAT files read.")
+        append_status("✅ Step 3: completed.")
         
         
         # Step 4: Getting Manifest
-        append_status("Step 4: Getting Manifest...")
-        incProgress(1/6, detail = "Getting Manifest") # Progress: 4/6
-        manifest <- tryCatch({
-          getManifest(RGset_val)
+        append_status("Step 4: Getting Array Information...")
+        incProgress(1/6, detail = "Getting array infos") # Progress: 4/6
+        arry_info <- tryCatch({
+          annotation(RGset_val)
         }, error = function(e) {
-          append_status(paste("❌ Error getting manifest:", e$message))
-          incProgress(amount = 0, detail = "Manifest error") # Indicate failure, no progress
+          append_status(paste("❌ Error getting array informations:", e$message))
+          incProgress(amount = 0, detail = "Array information error") 
           showNotification(
-            paste("Error getting manifest:", e$message),
+            paste("Error getting array information:", e$message),
             type = "error",
             duration = 8
           )
           return(NULL)
         })
-        if (is.null(manifest)) return()
-        append_status("✅ Step 4: Manifest retrieved.")
-        output$manifest_output <- renderPrint({ manifest })
+        if (is.null(arry_info)) return()
+        append_status("✅ Step 4: completed.")
+        output$arry_info <- renderPrint({ arry_info })
         
         
         # Step 5: Converting raw signals to locus level (preprocessRaw)
@@ -380,7 +310,7 @@ loadDataServer <- function(id) {
           return(NULL)
         })
         if (is.null(raw_norm_val)) return()
-        append_status("✅ Step 5: Preprocessing completed.")
+        append_status("✅ Step 5: completed.")
         
         
         # Step 6: Extracting sample info and CpG count
@@ -417,12 +347,6 @@ loadDataServer <- function(id) {
     ))
   })
 }
-'# ADDED: Project Output Folder Input
-strong("Choose Project Output Directory:"),
-shinyDirButton(ns("projectPathDir"), "Select Output Folder", "Please select a folder for project outputs"),
-verbatimTextOutput(ns("selected_project_path")), # To display the selected path to the user
-helpText("All generated reports and plots will be saved here."),
-hr(), # Separator'
 
 
 

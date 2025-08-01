@@ -2,14 +2,13 @@
 # Date: 16-07-2025
 # Author: Ghazal Sinjar
 
-# Load necessary libraries (these should also be in the main app, but good to have here for module testing)
-library(shiny)
-library(bslib)
-library(DT)
-library(reticulate)
-library(processx)
-library(readr)
-library(openxlsx)
+# This module provides a user interface for performing TAD (Topologically Associating Domain)
+# calling on Hi-C contact maps. It integrates a Python script for initial data processing
+# from .mcool files and then executes the deDoc2 Java tool for TAD and subTAD identification.
+# The module handles input validation, file management (including copying .mcool files
+# to a project directory), execution of external tools, and displays the processed TAD
+# and subTAD tables within the Shiny application.
+
 
 # ─────────────────────────────────────
 # User Interface (UI) FUNCTION for the Module
@@ -44,7 +43,7 @@ tadcalling_ui <- function(id) {
         
         selectInput(
           inputId = ns("java_memory"), # Namespace input ID
-          label = "Java Memory Allocation",
+          label = "RAM Usage Limit",
           choices = c("4g", "8g", "16g"),
           selected = "8g"
         ),
@@ -95,7 +94,7 @@ tadcalling_ui <- function(id) {
 # ─────────────────────────────────────
 #' @param id Module ID.
 #' @param project_output_dir A reactive expression for the project's main output directory path.
-#' @return A list of reactive expressions containing the processed TADs and SubTADs data frames.
+#' @return A list of reactive expressions containing the tissue, resolution, list of the Chromosome processed and the path to their TAD/SubTAD files.
 tadcalling_server <- function(id, project_output_dir = NULL) {
   moduleServer(id, function(input, output, session) {
     
@@ -115,8 +114,6 @@ tadcalling_server <- function(id, project_output_dir = NULL) {
     current_tissue_rv <- reactiveVal(NULL)
     current_resolution_rv <- reactiveVal(NULL)
     current_java_memory_rv <- reactiveVal(NULL)
-
-    # Store a list of successfully processed chromosomes for display validation
     processed_chroms_list_rv <- reactiveVal(NULL) # Stores all successfully processed chroms
     
     #--------------------------------------------

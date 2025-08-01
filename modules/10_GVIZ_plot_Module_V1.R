@@ -8,20 +8,11 @@
 # The visualization includes gene models, ideograms, axis tracks, and optional custom annotation tracks.
 
 # Load Required Libraries for the entire app
-library(shiny)
-library(shinyWidgets) # For selectizeInput
-library(bslib)
 library(Gviz)
-library(GenomicRanges)
 library(IRanges)
 library(S4Vectors)
 library(GenomeInfoDb)
 library(BiocGenerics)
-library(DT) # If you plan to use data tables
-library(EnsDb.Hsapiens.v86)
-library(readr) # For read_delim
-library(dplyr) # For data manipulation
-
 
 
 
@@ -47,14 +38,14 @@ GvizPlotUI <- function(id) {
       # Static display for Binsize
       div(
         class = "mb-3", # Add some margin bottom for spacing
-        tags$label("TAD/SubTAD Bin Size (kb):", class = "form-label"),
+        HTML('<label class="control-label">TAD/SubTAD Bin Size (kb):</label>'),
         uiOutput(ns("display_binsize")) # This UI output will display the static value
       ),
       
       # Static display for Tissue
       div(
         class = "mb-3", # Add some margin bottom for spacing
-        tags$label("TAD/SubTAD Tissue:", class = "form-label"),
+        HTML('<label class="control-label">TAD/SubTAD Tissue:</label>'),
         uiOutput(ns("display_tissue")) # This UI output will display the static value
       ),
       
@@ -108,23 +99,39 @@ GvizPlotServer <- function(id,
     # --- Static Binsize and Tissue Display ---
     # These will now react to the current_resolution and current_tissue from tadcalling_results
     output$display_binsize <- renderUI({
+      print(paste("DEBUG: display_binsize: class(tadcalling_results()) is", class(tadcalling_results())))
+      print(paste("DEBUG: display_binsize: names(tadcalling_results()) are", paste(names(tadcalling_results()), collapse = ", ")))
+      
       req(tadcalling_results()$current_resolution()) # Get the reactive value from tadcalling_results
+      # DEBUG: Check the class of the reactive object itself
+      print(paste("DEBUG: display_binsize: class(tadcalling_results()$current_resolution) is", class(tadcalling_results()$current_resolution)))
+      
       tags$p(paste0(tadcalling_results()$current_resolution(), " kb"), class = "form-control-plaintext")
     })
     
     output$display_tissue <- renderUI({
+      # DEBUG: Check what tadcalling_results() returns
+      print(paste("DEBUG: display_tissue: class(tadcalling_results()) is", class(tadcalling_results())))
+      print(paste("DEBUG: display_tissue: names(tadcalling_results()) are", paste(names(tadcalling_results()), collapse = ", ")))
+      
       req(tadcalling_results()$current_tissue()) # Get the reactive value from tadcalling_results
+      # DEBUG: Check the class of the reactive object itself
+      print(paste("DEBUG: display_tissue: class(tadcalling_results()$current_tissue) is", class(tadcalling_results()$current_tissue)))
+      
       tags$p(tadcalling_results()$current_tissue(), class = "form-control-plaintext")
     })
     # --- End Static Binsize and Tissue Display ---
+    
     observe({
       req(tadcalling_results())
       processed_chroms_list_rv(tadcalling_results()$processed_chroms_list_rv())
     })
+    
+    
     # --- Reactive GRanges Objects from input tables ---
     gr_dmrs <- reactive({
       req(dmr_results())
-      req(dmr_results()$dmr_table)
+      req(dmr_results()$dmr_table())
       print("Reactive: gr_dmrs is calculating...")
       tryCatch({
         gr <- create_gr_dmrs(dmr_results()$dmr_table())
@@ -348,7 +355,7 @@ GvizPlotServer <- function(id,
         print("renderUI: region_selector for type DMRs")
         if (!is.null(gr_dmrs()) && length(gr_dmrs()) > 0) {
           dmrs <- gr_dmrs()
-          current_choices <- paste0(dmrs$DMR_ID, " (", dmrs$overlapped_gene_name, ")")
+          current_choices <- paste0(dmrs$DMR_ID, " (", dmrs$seqnames,"_" ,dmrs$overlapped_gene_name, ")")
           names(current_choices) <- current_choices
           
           # If the input$region_choice already has a value, try to keep it.

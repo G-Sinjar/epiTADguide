@@ -29,6 +29,7 @@ def process_contact_matrix_all_chroms(tissue, resolution_kb, path_mcool_file):
 
     try:
         # --- Input Normalization and Validation ---
+        # 1. resolution setting
         try:
             resolution_kb = int(resolution_kb)
             resolution_bp = resolution_kb * 1000
@@ -39,7 +40,8 @@ def process_contact_matrix_all_chroms(tissue, resolution_kb, path_mcool_file):
                 "chromosomes_processed": [],
                 "total_contacts_overall_mcool": 0
             }
-
+        
+        # 2. mcool path validation
         mcool_full_path = path_mcool_file
         if not mcool_full_path.endswith(".mcool"):
             mcool_full_path = f"{path_mcool_file}.mcool"
@@ -62,19 +64,28 @@ def process_contact_matrix_all_chroms(tissue, resolution_kb, path_mcool_file):
                 "total_contacts_overall_mcool": 0
             }
 
+
         # --- Setup Output Paths (UPDATED FOR HIERARCHICAL STRUCTURE) ---
+        # 1. checks path path dir of mcool in no path choose current directory
         base_dir_of_mcool = os.path.dirname(mcool_full_path_abs)
         if not base_dir_of_mcool:
             base_dir_of_mcool = os.getcwd()
 
+        # 2. create path for results
+        # Define the root for all results for this run: TADcaller_Results/TADs_YourTissue/
+        # This aligns with the R Shiny app's definition for consistent folder creation
         results_root_folder = os.path.join(base_dir_of_mcool, "TADcaller_Results", f"TADs_{tissue}")
+        
+        # Create the contact_matrix subfolder within this root
         contact_matrix_output_dir = os.path.join(results_root_folder, "contact_matrix")
         os.makedirs(contact_matrix_output_dir, exist_ok=True)
         print(f"Python (Debug): Contact matrix output directory: '{contact_matrix_output_dir}'")
 
+
         # --- Cooler Operations ---
         clr_path = f"{mcool_full_path_abs}::/resolutions/{resolution_bp}"
         print(f"Python (Debug): Attempting to open Cooler: {clr_path}")
+        # Instantiate cooler object
         clr = cooler.Cooler(clr_path)
 
         # Get all chromosome names
@@ -84,15 +95,17 @@ def process_contact_matrix_all_chroms(tissue, resolution_kb, path_mcool_file):
         # Get total contacts for the *entire* cooler object once
         total_contacts_overall = int(clr.matrix(balance=False, sparse=True)[:].data.sum())
 
-
+        # Extract and save contact matrix
         fetch_object = clr.matrix(balance=False)
 
         for chrom in all_chromosomes:
             chrom_info = {"chrom": chrom}
             try:
                 print(f"Python (Debug): Attempting to fetch matrix for chromosome: '{chrom}'")
+                # Attempt to fetch the submatrix - this is where KeyError might occur
                 submatrix = fetch_object.fetch(chrom)
-
+                
+                # Output path for the contact matrix
                 output_path = os.path.join(contact_matrix_output_dir,
                                            f"{tissue}_{chrom}_{resolution_kb}kb_contact_matrix.txt")
                 print(f"Python (Debug): Output matrix for {chrom} will be saved to: {output_path}")

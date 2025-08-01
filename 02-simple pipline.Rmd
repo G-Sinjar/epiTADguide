@@ -16,7 +16,6 @@ This is an R Markdown document. Markdown is a simple formatting syntax for autho
 When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document.
 
 
-
 # library
 ```{r}
 library(minfi)
@@ -46,7 +45,7 @@ RGset <- read.metharray.exp(targets = targets)
 #head(RGset) #1105209 # assays red + green
 #load("C:\\Users\\ghaza\\Documents\\ghazal\\Bioinformatik_Fächer\\Masterarbeit_Project\\Scripts\\R_Scripts/RGset_SWAN_normalised.RData")
 
-manifest <- getManifest(RGset)
+#manifest <- getManifest(RGset)
 #manifest
 
 ## duplicates finding
@@ -55,7 +54,8 @@ manifest <- getManifest(RGset)
 
 
 raw_normalised <- preprocessRaw(RGset)
-#raw_normalised # assays: Meth + Unmeth #936990
+raw_normalised # assays: Meth + Unmeth #936990
+annotation(raw_normalised)
 #These objects contain only the probes with usable methylation data:
 ```
 

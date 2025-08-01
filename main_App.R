@@ -1,18 +1,26 @@
+# Author: Ghazal Sinjar
+# Date: 30.07.2025
+
 # 1) Libraries
 library(shiny)
 library(bslib)
 library(minfi)
 library(shinyjs) # for enabling/disabling tabs
-# both libraries are automaticaly loaded when they are needed -> to Do test app without thoes
-#library(IlluminaHumanMethylationEPICv2manifest)
-#library(IlluminaHumanMethylationEPICv2anno.20a1.hg38)
+library(shinyWidgets)
 library(DT) # DT is needed for the filtering module's table output
 library(writexl) # For excel downloads in filtering module
 library(openxlsx) # For excel downloads in filtering module
-library(GenomicRanges) # For GenomicRatioSet and related operations in filtering module
-library(shinyWidgets)
+library(readr)
+library(dplyr) # For data manipulation (filter, select, mutate, bind_rows)
 library(reticulate) # ADDED: Needed for Python integration in tadcalling_module
 library(processx) # ADDED: Needed for running external processes (Java TADcaller)
+# both libraries are automaticaly loaded when they are needed -> to Do test app without thoes
+#library(IlluminaHumanMethylationEPICv2manifest)
+#library(IlluminaHumanMethylationEPICv2anno.20a1.hg38)
+library(GenomicRanges) # For GenomicRatioSet and related operations in filtering module
+library(EnsDb.Hsapiens.v86)
+
+
 
 # 2) Source your existing modules
 source("modules/01_loadData_Module.R")
@@ -33,16 +41,16 @@ source("modules/10_GVIZ_plot_Module_V1.R")
 
 
 
-# This is a static object that will be passed to the DMR module
+#3) This is a static object that will be passed to the DMR module
 message("Loading/Preparing tx_gr_filtered for annotation...")
 edb <- EnsDb.Hsapiens.v86
 options(ucscChromosomeNames = TRUE)
 tx_gr <- genes(edb)
 tx_gr_filtered_global <- keepSeqlevels(tx_gr, standardChromosomes(tx_gr), pruning.mode = "coarse")
 seqlevelsStyle(tx_gr_filtered_global) <- "UCSC"
-message("tx_gr_filtered prepared.")
+message("Global: tx_gr_filtered prepared.")
 #-------------------------------------------------------------------------
-# Chromosome Lengths Table from BSgenome
+# 4) Chromosome Lengths Table from BSgenome
 library(BSgenome.Hsapiens.UCSC.hg38)
 hg38 <- BSgenome.Hsapiens.UCSC.hg38
 chr_lengths <- seqlengths(hg38)
@@ -53,16 +61,16 @@ chr_size_df_global <- data.frame(
 )
 print("Global: chr_size_df_global loaded.")
 #------------------------------------------------------------------
-# CpG Islands - Loaded once globally
+# 5) CpG Islands - Loaded once globally
 # Uses the loadCpGIslands_gr function from utils/GVIZ_plot_utils.R
 gr_cpgIslands_global <- loadCpGIslands_gr(destfile = "cpgIslandExt_hg38.txt.gz")
 print(paste("Global: gr_cpgIslands_global loaded. Number of CpG Islands:", length(gr_cpgIslands_global)))
 #--------------------------------------------------------------------
 
-# 3) UI
+# 6) UI
 ui <- navbarPage(
   id = "main_tabs",
-  title = "EPIC Array Pipeline",
+  title = "Infinium MethylationEPIC Array Pipeline",
   theme = bs_theme(version = 5, bootswatch = "flatly"),
   
   tabPanel("Load Raw Data",
@@ -92,7 +100,6 @@ ui <- navbarPage(
   tabPanel("DMR Identification",
            dmrs_ui("dmrs_module_id") ,
            actionButton("to_boxplots", "Next → DMR Boxplots")
-           
   ),
   tabPanel("DMR Boxplots",
            boxplotUI("boxplot_module_id"),
@@ -109,11 +116,10 @@ ui <- navbarPage(
   tabPanel("Final plot",
            GvizPlotUI("myGvizPlot")
   )
-  
 )
 
-
-# 4) server
+#-------------------------------------------------------------------------
+# 7) server
 server <- function(input, output, session) {
   
   # --- Helper Functions ---
@@ -129,6 +135,7 @@ server <- function(input, output, session) {
   disable("main_tabs") # disables all tab switching via clicks
   
   observe({
+    print("DEBUG: Main App: Initializing UI and disabling tabs/buttons.")
     # Disable all except Offtargets Import and Load Raw Data tab
     tabs_to_disable <- c("QC Plots", "Normalisation", "Filtering", "Annotation", "DMR Identification", "DMR Boxplots", "Final plot")
     lapply(tabs_to_disable, disable_tab)
@@ -157,6 +164,7 @@ server <- function(input, output, session) {
   # --- Module Server Calls and Data Flow ---
   # 1- Load Data Module
   # This module returns a list of reactive values: RGset, raw_normalised, targets, project_dir
+  print("DEBUG: Main App: Calling loadDataServer.")
   loaded_data <- loadDataServer("loader")
   
   # OBSERVE targets from loaded_data and enable "Next -> QC" when it's created
@@ -171,6 +179,7 @@ server <- function(input, output, session) {
   # --- Navigation Logic ---
   # Navigate to QC tab
   observeEvent(input$to_qc, {
+    print("DEBUG: Main App: 'to_qc' button clicked.")
     # Ensure targets is set before proceeding
     req(loaded_data$targets())
     
