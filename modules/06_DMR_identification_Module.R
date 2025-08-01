@@ -40,7 +40,7 @@ dmrs_ui <- function(id) {
       div(
         id = ns("B_help_text_div"),
         style = "display: none;",
-        helpText("B controls the number of permutations used to assess significance, reducing false positives. More permutations = higher accuracy.")
+        helpText("B controls the number of permutations used to assess significance, reducing false positives. More permutations = higher accuracy. If the number of samples is large this can be set to a large number, such as 1000. Note that this will take longer.")
       ),
 
       #-------------------------------------------------------
@@ -74,6 +74,24 @@ dmrs_ui <- function(id) {
       actionButton(ns("run_dmr"), "Detect DMRs"),
       helpText("Note: This step can take at least 5 minutes (B=0). Higher B values will increase runtime. For example B=100 takes 1.5 hours using 6 Cores."),
       
+      # --- NEW: TABLE NOTES TOGGLEABLE HELP TEXT ---
+      actionLink(ns("toggle_table_notes"), "Click for notes on reading the table."),
+      div(
+        id = ns("table_notes_div"),
+        style = "display: none; font-size: 0.9em;",
+        h5("Notes on reading the table"),
+        p(strong("Width:"), " The length of the DMR in Bp."),
+        p(strong("CpGs.inDMR:"), " The number of probes (CpGs) contained within the identified bump."),
+        p(strong("CpGs.inCluster:"), " The number of probes (CpGs) around the DMR region, including the CpGs in the DMR."),
+        p(strong("first_overlapped_gene:"), " First gene hit in the EnsDb.Hsapiens.v86 (Ensembl based annotation package)."),
+        p(strong("All_overlapped_genes:"), " All gene hits in the EnsDb.Hsapiens.v86 (Ensembl based annotation package)."),
+        p(strong("*p.value:"), " The unadjusted p-value for the DMR.  A small p-value indicates that a DMR with such a large peak height is unlikely to occur by random chance."),
+        p(strong("*fwer:"), " The Family-Wise Error Rate (FWER) adjusted p-value.  It adjusts the p-value to control the probability of making even a single false discovery. A low FWER value (e.g., < 0.05) is strong evidence that the bump is a true finding."),
+        p(strong("*p.valueArea:"), "The unadjusted p-value for the bump's area. It answers the question: How likely is it to find a bump with this large of an area by chance? "),
+        p(strong("*fwerArea:"), "The FWER-adjusted p-value for the bump's area. It is often a more robust and recommended measure of significance than fwer because it considers both the magnitude and the length (number of CpGs) of the differential methylation. A region with a modest methylation change over many probes might be more biologically significant than a very large change in a single probe, and the area metric captures this."),
+        p("(*) for columns which only appear if the number of permutations (B) is not 0.")
+      ),
+      
       hr(),
       
       # Download options and button (only visible when results available)
@@ -97,6 +115,7 @@ dmrs_ui <- function(id) {
         style = "margin-top: 20px;", # Add some space above the table section
         h4("Detected DMRs"),
         helpText("Note: A Differentially Methylated Region (DMR) containing just one CpG site is equivalent to a Differentially Methylated Position (DMP)."),
+        br(),
         DT::dataTableOutput(ns("dmr_table"))
       )
     )
@@ -114,6 +133,11 @@ dmrs_ui <- function(id) {
 #' @return A list of reactive values: `dmr_table` (the detected DMRs table) and `pheno` (phenotype data).
 dmrs_server <- function(id, filtered_rgset_reactive, tx_gr_filtered_static,project_output_dir) {
   moduleServer(id, function(input, output, session) {
+    
+    # Inside dmrs_server
+    observeEvent(input$toggle_table_notes, {
+      shinyjs::toggle("table_notes_div")
+    })
     
     # Reactive value to store status text
     dmr_status_text <- reactiveVal("Ready to identify DMRs.")
@@ -303,7 +327,7 @@ dmrs_server <- function(id, filtered_rgset_reactive, tx_gr_filtered_static,proje
           return()
         }
         
-        num_annotated <- sum(!is.na(mcols(GR_Dmrs_annotated)$overlapped_gene_name))
+        num_annotated <- sum(!is.na(mcols(GR_Dmrs_annotated)$first_overlapped_gene))
         dmr_status_text(paste0(
           dmr_status_text(),
           "\n✅ Step 3 completed: ", num_annotated, " DMRs overlapped with genes."
@@ -379,7 +403,7 @@ dmrs_server <- function(id, filtered_rgset_reactive, tx_gr_filtered_static,proje
 }
 
 
-# test module
+'# test module
 # libraries especially for this module
 library(DT)        # For interactive data tables
 library(openxlsx)
@@ -415,7 +439,14 @@ tx_gr_filtered <- keepSeqlevels(tx_gr, standardChromosomes(tx_gr), pruning.mode 
 seqlevelsStyle(tx_gr_filtered) <- "UCSC"
 #tx_gr_filtered
 
+# Check if the directory exists
+dir_path <- "../main_app_tests/epic-test"
 
+if (dir.exists(dir_path)) {
+  print(paste("The directory exists:", dir_path))
+} else {
+  print(paste("The directory does not exist:", dir_path))
+}
 
 
 # UI
@@ -436,6 +467,7 @@ server <- function(input, output, session) {
   annotated_table <- dmrs_server("dmrs", 
                                  filtered_rgset_reactive,
                                  tx_gr_filtered,
-                                 project_output_dir = reactive({"./epic-test"}))
+                                 project_output_dir = reactive({dir_path}))
 }
 shinyApp(ui, server)
+'

@@ -13,50 +13,59 @@
 # ─────────────────────────────────────
 annotationUI <- function(id) {
   ns <- NS(id)
-  page_sidebar(
-    sidebar = sidebar(
-      width = "350px",
-      actionButton(ns("run_annot"), "Run Annotation on filtered data"),
-      
-      # Added help text/note below the action button
-      div(
-        style = "margin-top: 20px; font-size: 0.9em;",
-        h5("Notes for reading the table:"),
-        p(strong("ProbeSeqA, ProbeSeqB:"), " the sequence of the probe; B is for Infinium I beadtypes which has 2 probes instead of one."),
-        p(strong("Type:"), " Infinium Design Type; Infinium I (2 probes/locus) or Infinium II (1 probe/locus)."),
-        p(strong("Next_Base:"), " For Infinium I probes, the nucleotide immediately following the CpG. Blank for Infinium II."),
-        p(strong("Color:"), " For Infinium I probes, the color channel of the 'Next_Base' signal."),
-        p(strong("Strand_CO:"), "refers to whether the probe is designed to target the originally bisulfite converted DNA strand, or the strand resulting from amplification of the originally converted DNA strand.
-Examples of converted/unconverted designations: Converted strand = C, Opposite strand = O."),
-        p(strong("Probe_rs:"), " rsid(s) of SNP(s) located ", strong("within the probe sequence"), " itself. This SNP may affect probe binding or measurement."),
-        p(strong("CpG_rs:"), " rsid(s) of SNP(s) ", strong("at the CpG site"), " targeted by the probe (where methylation is measured). Blanck if SNPs are removed in previous step."),
-        p(strong("SBE_rs:"), " rsid(s) of SNP(s) ", strong("at the Single Base Extension (SBE) site."), " This site is relevant in the chemistry of the assay, affecting signal detection. Blanck if SNPs are removed in previous step."),
-        p(strong("...maf:"), " The minor allele frequency (MAF) of the SNP within the probe sequence. This tells how common the SNP is in the population."),
-        p(strong("Island_Name:"), " Chromosomal coordinates of the CpG Island from UCSC."),
-        p(strong("Relation_to_Island:"), " The location of the CpG relative to the CpG island."),
-        p(
-          style = "padding-left: 20px;",
-          "Shore = 0-2 kb from island.", br(),
-          "Shelf = 2-4 kb from island.", br(),
-          "N = upstream (5') of CpG island.", br(),
-          "S = downstream (3') of CpG island"
-        ),
-        p(strong("Probe_Type:"), " Probe type: cg=CpG, nv=nucleotide variant, rs=dbSNP rsID, ch=Cp<nonG base>"),
+  tagList(
+    shinyjs::useShinyjs(),  # Enable shinyjs
+    
+    page_sidebar(
+      sidebar = sidebar(
+        width = "350px",
+        actionButton(ns("run_annot"), "Run Annotation on filtered data"),
         
-        p(strong("UCSC_RefGene:"), " UCSC RefGene (-Group, -Name, -Accession)"),
-        p(strong("Gencode:"), " Gencode (-Group, -Name, -Accession)"),
-        p(strong("Regulatory_Feature_Group:"), " Predicted regulatory elements."),
-        p(strong("Methyl450K_Enhancer:"), " Predicted enhancer elements as annotated in the original 450K design are marked 'True'."),
-        p(strong("Methyl...._Loci:"), " CpG name if CpG's carried over from other HumanMethylation arrays."),
-        p("The last few columns, with the sample names as headers, represent the ", strong("beta values"), " of each probe in that sample.")        
+        # Toggle link + collapsible notes section
+        tags$div(
+          style = "margin-top: 20px;",
+          actionLink(ns("toggle_notes"), "📘 Show notes for reading the table"),
+          tags$div(
+            id = ns("note_section"),  # ID for toggle
+            style = "display: none; margin-top: 10px; font-size: 0.9em;",  # initially hidden
+            
+            h5("Notes for reading the table:"),
+            p(strong("ProbeSeqA, ProbeSeqB:"), " the sequence of the probe; B is for Infinium I beadtypes which has 2 probes instead of one."),
+            p(strong("Type:"), " Infinium Design Type; Infinium I (2 probes/locus) or Infinium II (1 probe/locus)."),
+            p(strong("Next_Base:"), " For Infinium I probes, the nucleotide immediately following the CpG. Blank for Infinium II."),
+            p(strong("Color:"), " For Infinium I probes, the color channel of the 'Next_Base' signal."),
+            p(strong("Strand_CO:"), " Refers to whether the probe targets the converted or opposite strand."),
+            p(strong("Probe_rs:"), " SNP(s) within the probe sequence itself."),
+            p(strong("CpG_rs:"), " SNP(s) at the CpG site. Blank if removed."),
+            p(strong("SBE_rs:"), " SNP(s) at the Single Base Extension (SBE) site. Blank if removed."),
+            p(strong("...maf:"), " Minor Allele Frequency of the SNP in the population."),
+            p(strong("Island_Name:"), " CpG Island coordinates from UCSC."),
+            p(strong("Relation_to_Island:"), " CpG location relative to island:"),
+            tags$ul(
+              tags$li("Shore = 0-2 kb from island."),
+              tags$li("Shelf = 2-4 kb from island."),
+              tags$li("N = upstream (5') of island."),
+              tags$li("S = downstream (3') of island.")
+            ),
+            p(strong("Probe_Type:"), " Probe type: cg=CpG, nv=variant, rs=SNP, ch=Cp<nonG base>"),
+            p(strong("UCSC_RefGene:"), " Gene annotations from UCSC."),
+            p(strong("Gencode:"), " Gene annotations from GENCODE."),
+            p(strong("Regulatory_Feature_Group:"), " Predicted regulatory elements."),
+            p(strong("Methyl450K_Enhancer:"), " Marked 'True' for 450K enhancer annotations."),
+            p(strong("Methyl...._Loci:"), " CpGs from older platforms."),
+            p("Final columns show ", strong("beta values"), " per probe/sample.")
+          )
+        ),
+        
+        hr(),
+        radioButtons(ns("download_format"), "Choose format:", choices = c("CSV", "Excel"), inline = TRUE),
+        downloadButton(ns("download_data"), "Download Table")
       ),
-      hr(),
-      radioButtons(ns("download_format"), "Choose format:", choices = c("CSV", "Excel"), inline = TRUE),
-      downloadButton(ns("download_data"), "Download Table")
-    ),
-    DTOutput(ns("annot_table"))
+      DTOutput(ns("annot_table"))
+    )
   )
 }
+
 
 
 # ─────────────────────────────────────
@@ -74,7 +83,11 @@ annotationServer <- function(id, grset_reactive, project_output_dir) {
     annotation_obj <- reactiveVal(NULL)
     annot_df <- reactiveVal(NULL)
     temp_file <- reactiveVal(NULL)
-  
+    #------------------------------------------------------
+    observeEvent(input$toggle_notes, {
+      shinyjs::toggle(id = "note_section")  # Toggle visibility of the note section
+    })
+    
     #-----------------------------------------
     observeEvent(input$run_annot, {
       req(grset_reactive())

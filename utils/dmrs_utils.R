@@ -111,6 +111,10 @@ library(tibble)
 #'
 #' @return A sorted GRanges object with renamed and rounded metadata.
 prepare_dmrs_granges <- function(dmrs_df) {
+  # Drop unwanted columns if they exist
+  cols_to_remove <- c("indexStart", "indexEnd", "area", "cluster")
+  dmrs_df <- dmrs_df[, !(names(dmrs_df) %in% cols_to_remove)]
+  
   gr <- makeGRangesFromDataFrame(
     df = dmrs_df,
     seqnames.field = "chr",
@@ -131,7 +135,7 @@ prepare_dmrs_granges <- function(dmrs_df) {
   }
   
   # Reorder and round metadata
-  desired_cols <- c("width", "mean.methy.difference", "CpGs.inDMR", "p.value", "cluster", "CpGs.inCluster")
+  desired_cols <- c("width", "mean.methy.difference", "CpGs.inDMR", "p.value", "CpGs.inCluster")
   all_cols <- names(mcols(gr))
   cols_to_select <- desired_cols[desired_cols %in% all_cols]
   
@@ -158,7 +162,7 @@ prepare_dmrs_granges <- function(dmrs_df) {
 #' @param GR_Dmrs GRanges object of DMRs.
 #' @param tx_gr_filtered GRanges object of transcript or gene annotation.
 #'
-#' @return GRanges object with additional columns: overlapped_gene_name, concatenated_gene_names, and unique DMR_ID.
+#' @return GRanges object with additional columns: first_overlapped_gene, All_overlapped_genes, and unique DMR_ID.
 annotate_dmrs_with_genes <- function(GR_Dmrs, tx_gr_filtered) {
   
   # -------------------- STEP 1: Get first overlapping gene for each DMR --------------------
@@ -166,7 +170,7 @@ annotate_dmrs_with_genes <- function(GR_Dmrs, tx_gr_filtered) {
   hits_first <- findOverlaps(GR_Dmrs, tx_gr_filtered, ignore.strand = TRUE, select = "first")
   
   # Add the name of the first overlapping gene to the DMR metadata
-  mcols(GR_Dmrs)$overlapped_gene_name <- tx_gr_filtered$gene_name[hits_first]
+  mcols(GR_Dmrs)$first_overlapped_gene <- tx_gr_filtered$gene_name[hits_first]
   
   # -------------------- STEP 2: Get all overlapping gene names concatenated --------------------
   # Find all overlaps between DMRs and genes
@@ -176,16 +180,16 @@ annotate_dmrs_with_genes <- function(GR_Dmrs, tx_gr_filtered) {
   overlapping_gene_names_list <- split(tx_gr_filtered$gene_name[subjectHits(hits_all)], queryHits(hits_all))
   
   # Concatenate gene names per DMR into a single string (e.g. "Gene1;Gene2")
-  concatenated_gene_names_vector <- sapply(overlapping_gene_names_list, paste, collapse = ";")
+  All_overlapped_genes_vector <- sapply(overlapping_gene_names_list, paste, collapse = ";")
   
   # Create a full-length character vector, fill with NA initially
   all_concat_names <- rep(NA_character_, length(GR_Dmrs))
   
   # Insert concatenated names at the correct positions
-  all_concat_names[as.integer(names(concatenated_gene_names_vector))] <- concatenated_gene_names_vector
+  all_concat_names[as.integer(names(All_overlapped_genes_vector))] <- All_overlapped_genes_vector
   
   # Add concatenated gene names to metadata
-  mcols(GR_Dmrs)$concatenated_gene_names <- all_concat_names
+  mcols(GR_Dmrs)$All_overlapped_genes <- all_concat_names
   
   # -------------------- STEP 3: Create unique DMR IDs based on gene names --------------------
   dmr_numbers <- seq_len(length(GR_Dmrs))

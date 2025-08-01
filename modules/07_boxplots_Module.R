@@ -67,25 +67,25 @@ boxplotServer <- function(id, dmr_output_reactive, annotation_output_reactive) {
       annotation_data_container()$annotated_table()
     })
 
-    'observe({
-      req(dmrs_table_r())
-      updateSelectInput(session, "dmr", choices = sort(unique(dmrs_table_r()$DMR_ID)))
-    })'
     observe({
       req(dmrs_table_r()) # Ensure dmrs_table_r() (the reactive value of the DMRs table) is available
       
       # Get the DMRs data frame
       dmr_data <- dmrs_table_r()
       
-      # Create a named vector for choices
-      # The names will be what the user sees, and the values will be the actual DMR_ID to be used internally by your app.
-      choices_list <- setNames(
-        dmr_data$DMR_ID, # The actual value passed to input$dmr
-        # Updated to include the chromosome
-        paste0(dmr_data$DMR_ID, " (", dmr_data$chr, "_", dmr_data$overlapped_gene_name, ")") 
+      # Create a named vector for choices with a conditional check for NA
+      # Use ifelse to check for NA in 'first_overlapped_gene'
+      display_names <- ifelse(
+        is.na(dmr_data$first_overlapped_gene),
+        # If the gene is NA, don't include the gene name in the label
+        paste0(dmr_data$DMR_ID, " (", dmr_data$chr, ")"),
+        # Otherwise, include the gene name as usual
+        paste0(dmr_data$DMR_ID, " (", dmr_data$chr, "_", dmr_data$first_overlapped_gene, ")")
       )
       
-      updateSelectInput(session, "dmr", choices = choices_list) 
+      choices_list <- setNames(dmr_data$DMR_ID, display_names)
+      
+      updateSelectInput(session, "dmr", choices = choices_list)
     })
     
     status <- reactiveVal("ℹ️ Waiting to select a DMR ID.")
@@ -223,7 +223,7 @@ boxplotServer <- function(id, dmr_output_reactive, annotation_output_reactive) {
 }
 
 
-'#test app
+#test app
 # Load libraries
 library(shiny)
 library(bslib)
@@ -235,7 +235,7 @@ library(ggplot2)
 source("../utils/dmrs_boxplot_utils.R")
 
 # Load RDS objects (as static lists)
-results_dmr <- readRDS("./intermediate_data/DMRs_cutoff_neg0.15_to_0.15_B0_2025-07-05.rds")
+results_dmr <- readRDS("../main_app_tests/epic-test/DMR_results/DMRs_cutoff_-0.15_0.15_B1_20250801.rds")
 results_anno <- readRDS("./intermediate_data/annotated_object_20250623.rds")
 
 # Wrap each element in reactiveVal(), and return a list of reactive functions
@@ -283,6 +283,4 @@ server <- function(input, output, session) {
   )
 }
 
-# ---- Run the app ----
 shinyApp(ui = ui, server = server)
-'
