@@ -32,32 +32,153 @@ library(htmlwidgets)
 ```{r}
 beta_values <- read.xlsx("./Output/2-Beta_values_SWAN_0.01.xlsx", rowNames = TRUE)
 M_values <- read.xlsx("./Output/3-M_values_SWAN_0.01.xlsx",, rowNames = TRUE)
-#View(M_values)
-
-# pheno (used script 2.)
-pheno <- pData(ratio_geno_Swan_NoSNP)$Sample_Group
-
+View(M_values)
+pheno
 # or
 # Convert guide_status to a factor (if it isn't already)
 guide_status <- factor(pData(ratio_geno_Swan_0.01_NoSNP)$Sample_Group)
 # Change the reference level to "unguided"
 guide_status <- relevel(guide_status, ref = "unguided")
+
+#-------------------06.08.2025
+dir <- "C:/Users/ghaza/Documents/ghazal/Bioinformatik_Fächer/Masterarbeit_Project/Scripts/R_Scripts/modules/main_app_tests/box_pheno_pass/intermediate_data/Five_objects_normalised_data.rds"
+methylsets <- readRDS(dir)
+
+# pheno (used script 2.)
+pheno_table <- pData(methylsets$SWAN)
+pheno <- pheno_table$Sample_Group
+
+beta_values <- getBeta(methylsets$SWAN)
+M_values <- getM(methylsets$SWAN)
+```
+
+# 2-function to cumpute getting beta and m mean difference
+```{r}
+calculateMethylationMeanDifferences <- function(normalised_methylset, pheno_table, ref_group, round_digits = 5) {
+
+  # 1. Get Beta and M values using tryCatch for robust error handling
+  beta_values <- tryCatch({
+    # Attempt to get Beta values. This assumes 'getBeta' is available
+    # and compatible with 'normalised_methylset' (e.g., from 'minfi').
+    getBeta(normalised_methylset)
+  }, error = function(e) {
+    message("Error getting Beta values: ", e$message)
+    return(NULL) # Return NULL on error
+  })
+
+  M_values <- tryCatch({
+    # Attempt to get M values. This assumes 'getM' is available
+    # and compatible with 'normalised_methylset' (e.g., from 'minfi').
+    getM(normalised_methylset)
+  }, error = function(e) {
+    message("Error getting M values: ", e$message)
+    return(NULL) # Return NULL on error
+  })
+
+  # Check if Beta or M values could not be retrieved
+  if (is.null(beta_values) || is.null(M_values)) {
+    stop("Could not retrieve Beta or M values. Please check 'normalised_methylset' object and 'minfi' package availability.")
+  }
+
+  # Ensure column names of beta/M matrices match row names of pheno_table.
+  # This is crucial for correctly mapping samples to their groups.
+  if (!all(colnames(beta_values) %in% rownames(pheno_table))) {
+    stop("Column names of beta values do not fully match row names of pheno table.
+          Please ensure sample IDs are consistent.")
+  }
+  if (!all(colnames(M_values) %in% rownames(pheno_table))) {
+    stop("Column names of M values do not fully match row names of pheno table.
+          Please ensure sample IDs are consistent.")
+  }
+
+  # Order the pheno_table to match the column order of the methylation data.
+  # This ensures correct group assignment for each sample column.
+  pheno_ordered <- pheno_table[colnames(beta_values), , drop = FALSE]
+
+  # 2. Identify and validate groups
+  if (!"Sample_Group" %in% colnames(pheno_ordered)) {
+    stop("Phenotype table must contain a column named 'Sample_Group'.")
+  }
+
+  all_groups <- unique(pheno_ordered$Sample_Group)
+  if (!ref_group %in% all_groups) {
+    stop(paste0("Reference group '", ref_group, "' not found in the 'Sample_Group' column.
+                Available groups are: ", paste(all_groups, collapse = ", ")))
+  }
+
+  # Identify the 'other' group. This function is designed for exactly two groups.
+  other_groups <- setdiff(all_groups, ref_group)
+  if (length(other_groups) != 1) {
+    stop(paste0("This function is designed for exactly two groups (reference and one other).
+                Found groups: ", paste(all_groups, collapse = ", ")))
+  }
+  other_group_name <- other_groups[1]
+
+  # Get the sample IDs for each group based on the ordered phenotype table.
+  ref_sample_names <- rownames(pheno_ordered)[pheno_ordered$Sample_Group == ref_group]
+  other_sample_names <- rownames(pheno_ordered)[pheno_ordered$Sample_Group == other_group_name]
+
+  # 3. Subset Beta values by group
+  # 'drop = FALSE' ensures that the result remains a matrix even if only one sample is present.
+  beta_ref <- beta_values[, ref_sample_names, drop = FALSE]
+  beta_other <- beta_values[, other_sample_names, drop = FALSE]
+
+  # 4. Compute row-wise mean for each group (Beta values)
+  mean_beta_ref <- rowMeans(beta_ref, na.rm = TRUE) # na.rm=TRUE handles potential NA values
+  mean_beta_other <- rowMeans(beta_other, na.rm = TRUE)
+
+  # 5. Compute Beta mean difference: log2(other_group) - log2(ref_group).
+  # Add a small epsilon to avoid log2(0) or log2 of very small numbers, which can result in -Inf.
+  epsilon <- 1e-9 # one of a billion
+  Beta_mean_difference <- log2(mean_beta_other + epsilon) - log2(mean_beta_ref + epsilon)
+
+  # 6. Subset M values by group
+  M_ref <- M_values[, ref_sample_names, drop = FALSE]
+  M_other <- M_values[, other_sample_names, drop = FALSE]
+
+  # 7. Compute row-wise mean for each group (M values)
+  mean_M_ref <- rowMeans(M_ref, na.rm = TRUE)
+  mean_M_other <- rowMeans(M_other, na.rm = TRUE)
+
+  # 8. Compute M mean difference: other_group - ref_group -> is the fold change
+  M_mean_difference <- mean_M_other - mean_M_ref
+
+  # 9. Round the final mean differences before combining
+  M_mean_difference_rounded <- round(M_mean_difference, round_digits)
+  Beta_mean_difference_rounded <- round(Beta_mean_difference, round_digits)
+
+  # 10. Combine rounded mean differences into a single data frame
+  # Row names will be the CpG IDs from the original methylation data.
+  combined_results <- data.frame(
+    M_mean_difference = M_mean_difference_rounded,
+    Beta_mean_difference = Beta_mean_difference_rounded,
+    row.names = rownames(beta_values) # CpG IDs
+  )
+
+  return(combined_results)
+}
+
+
+#test function
+ref_group <- "unguided"
+mean_beta_M_tbl <- calculateMethylationMeanDifferences(normalised_methylset = methylsets$SWAN, pheno_table = pheno_table, ref_group = ref_goup)
+head(mean_beta_M_tbl)
 ```
 
 ## 2- compute the beta and M values 
 ```{r}
 ########## computing the beta values #############
 # Subset the columns for unguided and guided samples
-#beta_unguided <- beta_values[, c(1, 3, 5, 7)] 
-#beta_guided <- beta_values[, c(2, 4, 6, 8)]   
+beta_unguided <- beta_values[, c(1, 3, 5, 7)] 
+beta_guided <- beta_values[, c(2, 4, 6, 8)]   
 
 # Compute row-wise mean for each group
-#mean_beta_unguided <- rowMeans(beta_unguided)
-#mean_beta_guided <- rowMeans(beta_guided)
+mean_beta_unguided <- rowMeans(beta_unguided)
+mean_beta_guided <- rowMeans(beta_guided)
 
 # Compute the mean difference (guided - unguided)
 #Beta_log2_meanSubstraction <- log2(mean_beta_guided - mean_beta_unguided)    # NAs wurde erzeugt
-#Beta_log2mean_Substraction <- log2(mean_beta_guided) - log2(mean_beta_unguided)
+Beta_log2mean_Substraction <- log2(mean_beta_guided) - log2(mean_beta_unguided)
 
 
 ########## computing the M values #############
@@ -86,9 +207,62 @@ dmp <- dmpFinder(as.matrix(beta_values), pheno = pheno, type = "categorical", qC
 #dmp_shrink <- dmpFinder(ratio_geno_Swan_0.01_NoSNP_Beta, pheno = pheno, type = "categorical", qCutoff = 1, shrinkVar = TRUE) 
 #Warnung: row names of contrasts don't match col names of coefficients
 #View(dmp_shrink)
+
+## 3. try with methyset -> worked
+pheno_table <- pData(methylsets$SWAN)
+pheno <- pheno_table$Sample_Group
+dmp <- dmpFinder(methylsets$SWAN, pheno = pheno, type = "categorical", qCutoff = 1, shrinkVar = FALSE) 
+dim(dmp) # 936990      4
+head(dmp)
+```
+# Editing DMP table
+```{r}
+#Add M and Beta mean difference columns to a DMP (Differentially Methylated Positions) table.
+addMeanDifferencesToDMP <- function(dmp_table, combined_Beta_M_mean_table) {
+  tryCatch({
+    # Ensure both tables have row names
+    if (is.null(rownames(dmp_table))) {
+      stop("'dmp_table' must have row names (CpG IDs).")
+    }
+    if (is.null(rownames(combined_Beta_M_mean_table))) {
+      stop("'combined_Beta_M_mean_table' must have row names (CpG IDs).")
+    }
+
+    # Convert to data.frame if they aren't already
+    dmp_df <- as.data.frame(dmp_table)
+    mean_df <- as.data.frame(combined_Beta_M_mean_table)
+    
+    # Add the mean differences directly by row name matching
+    dmp_df$M_mean_difference <- mean_df[rownames(dmp_df), "M_mean_difference"]
+    dmp_df$Beta_mean_difference <- mean_df[rownames(dmp_df), "Beta_mean_difference"]
+    
+    return(dmp_df)
+
+  }, error = function(e) {
+    message("Error adding mean differences to DMP table: ", e$message)
+    return(NULL)
+  })
+}
+
+# test funtion
+edited_dmp <- addMeanDifferencesToDMP(dmp_table = dmp, combined_Beta_M_mean_table = mean_beta_M_tbl)
+dim(edited_dmp)
+dim(mean_beta_M_tbl)
+#Check if row names match exactly:
+sum(rownames(dmp) %in% rownames(mean_beta_M_tbl)) == nrow(dmp)
+#Check for NA values in the mean differences:
+sum(is.na(mean_beta_M_tbl$Beta_mean_difference))
+# check if it worked
+# Correct way 1:
+edited_dmp["cg24426691_TC11", ]$Beta_mean_difference  # should be -0.1545998
+mean_beta_M_tbl["cg24426691_TC11", "Beta_mean_difference"]     
+
+# Correct way 2:
+mean_beta_M_tbl["cg06428163_BC21",]$Beta_mean_difference      # should be -0.2349488 
+mean_beta_M_tbl$Beta_mean_difference[rownames(mean_beta_M_tbl) == "cg06428163_BC21"]  
 ```
 
-# Editing the DMP table
+## Editing the DMP table
 ```{r}
 ################## Add beta_mean_difference #############  change according to dmp table name #################
 # 1. Match the row names of dmp with the names in mean_difference

@@ -47,7 +47,7 @@ RGset <- read.metharray.exp(targets = targets)
 
 #manifest <- getManifest(RGset)
 #manifest
-
+annotation(RGset)
 ## duplicates finding
 #probeIDs <- featureNames(RGset)  # For RGChannelSet or MethylSet
 #anyDuplicated(probeIDs)
@@ -56,6 +56,7 @@ RGset <- read.metharray.exp(targets = targets)
 raw_normalised <- preprocessRaw(RGset)
 raw_normalised # assays: Meth + Unmeth #936990
 annotation(raw_normalised)
+pData(raw_normalised)
 #These objects contain only the probes with usable methylation data:
 ```
 

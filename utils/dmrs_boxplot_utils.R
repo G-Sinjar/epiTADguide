@@ -144,25 +144,56 @@ reshape_to_long_beta <- function(region_cpgs, pheno_data) {
 # ----------------------------------------------------------------------
 # 3. Create boxplot of beta values across groups and CpGs
 # ----------------------------------------------------------------------
-
-#' Create boxplot from reshaped CpG beta data
-#'
-#' Visualizes beta values of CpGs within a DMR across sample groups using
-#' boxplots. Optionally supports interactive plots with plotly.
-#'
-#' @param long_format_table Data.frame. Output of `reshape_to_long_beta()`.
-#' @param interactive Logical. If TRUE, generates a plotly plot.
-#' @param use_positional_spacing Logical. If TRUE, x-axis is genomic position instead of CpG labels.
-#'
-#' @return A ggplot2 or plotly boxplot object.
-#'
-#' @export
-'create_boxplot <- function(long_format_table, interactive = FALSE, use_positional_spacing = FALSE) {
+create_boxplot <- function(
+    long_format_table, 
+    interactive = FALSE, 
+    use_positional_spacing = FALSE,
+    ref_group = NULL  # New parameter for reference group
+) {
+  
+  # Step 1: Input and data checks
+  if (is.null(long_format_table) || nrow(long_format_table) == 0) {
+    stop("Error: Input data table is empty or NULL.")
+  }
+  
   if (length(unique(long_format_table$chr)) != 1) {
     stop("Error: Not all CpGs are on one chromosome.")
   }
   
-  # Correct x-axis variable name
+  # Step 2: Dynamic color palette generation with proper group level handling
+  group_levels <- sort(unique(as.character(long_format_table$Group)))  # Ensure character type
+  n_groups <- length(group_levels)
+  
+  # Create color palette ensuring proper naming
+  if (n_groups == 2) {
+    if (!is.null(ref_group)) {
+      # Validate and clean reference group
+      ref_group <- as.character(ref_group)
+      if (!ref_group %in% group_levels) {
+        warning("Specified ref_group '", ref_group, "' not found in data groups. Using default ordering.")
+        ref_group <- NULL
+      }
+    }
+    
+    if (!is.null(ref_group)) {
+      # Ensure reference group is first and gets blue
+      other_group <- setdiff(group_levels, ref_group)
+      group_levels <- c(ref_group, other_group)
+      color_palette <- c("blue", "orange")
+      names(color_palette) <- group_levels  # Explicit naming
+    } else {
+      # Default ordering
+      color_palette <- c("blue", "orange")
+      names(color_palette) <- group_levels  # Explicit naming
+    }
+  } else {
+    # For >2 groups
+    color_palette <- rainbow(n_groups)
+    names(color_palette) <- group_levels  # Explicit naming
+  }
+  
+  
+  # Step 3: Plot setup and aesthetics
   x_col <- if (use_positional_spacing) "pos" else "PositionLabel"
   
   # Define text aesthetics for tooltips
@@ -194,110 +225,23 @@ reshape_to_long_beta <- function(region_cpgs, pheno_data) {
   
   pos_jit <- position_jitterdodge(jitter.width = 0.2, dodge.width = 0.75)
   
-  # Create base plot
+  # Step 4: Create the base ggplot object
   p <- ggplot(long_format_table, aes_string(x = x_col, y = "BetaValue", fill = "Group")) +
     theme_minimal() +
-    scale_fill_manual(values = c("guided" = "orange", "unguided" = "blue")) +
-    scale_color_manual(values = c("guided" = "orange", "unguided" = "blue")) +
     labs(
       x = if (use_positional_spacing) paste("Position on", unique(long_format_table$chr)) else paste("CPG + Position on", unique(long_format_table$chr)),
       y = "Beta Value",
       fill = "Group"
     ) +
-    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+    theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 12))
   
-  # Add boxplots with proper grouping
-  if (use_positional_spacing && !interactive) {
-    p <- p + geom_boxplot(
-      aes(group = group_pos),
-      outlier.shape = NA,
-      color = "black",
-      lwd = 0.5,
-      position = pos_dodge
-    )
-  } else {
-    p <- p + geom_boxplot(
-      outlier.shape = NA,
-      color = "black",
-      lwd = 0.5,
-      position = pos_dodge
-    )
+  # Apply color scales only once
+  if (length(color_palette) > 0) {
+    p <- p + scale_fill_manual(values = color_palette) +
+      scale_color_manual(values = color_palette)
   }
   
-  # Add mean diamonds
-  p <- p + geom_point(
-    data = mean_values,
-    aes(x = !!sym(x_col), y = mean_beta, group = group_pos),
-    shape = 23, size = 3, color = "black", fill = "white",
-    position = pos_dodge
-  )
-  
-  if (interactive) {
-    p <- suppressWarnings(
-      p + geom_jitter(aes_string(color = "Group", text = "text"), 
-                      position = pos_jit, 
-                      shape = 16, size = 1.5)
-    )
-    return(plotly::ggplotly(p, tooltip = "text"))
-  } else {
-    p <- suppressWarnings(
-      p + geom_jitter(aes_string(color = "Group"), 
-                      position = pos_jit, 
-                      shape = 16, size = 1.5)
-    )
-    return(p)
-  }
-}'
-create_boxplot <- function(long_format_table, interactive = FALSE, use_positional_spacing = FALSE) {
-  if (length(unique(long_format_table$chr)) != 1) {
-    stop("Error: Not all CpGs are on one chromosome.")
-  }
-  
-  # Correct x-axis variable name
-  x_col <- if (use_positional_spacing) "pos" else "PositionLabel"
-  
-  # Define text aesthetics for tooltips
-  long_format_table$text <- if (interactive) {
-    if (use_positional_spacing) {
-      paste0(long_format_table$SampleID, "\n", long_format_table$PositionLabel)
-    } else {
-      long_format_table$SampleID
-    }
-  } else {
-    long_format_table$SampleID
-  }
-  
-  # Calculate mean values for each group at each position
-  mean_values <- long_format_table %>%
-    group_by(!!sym(x_col), Group) %>%
-    summarise(mean_beta = mean(BetaValue, na.rm = TRUE), .groups = "drop")
-  
-  # Create a grouping variable that combines position and group
-  long_format_table$group_pos <- interaction(long_format_table[[x_col]], long_format_table$Group)
-  mean_values$group_pos <- interaction(mean_values[[x_col]], mean_values$Group)
-  
-  # Set up position adjustments
-  pos_dodge <- if (use_positional_spacing && !interactive) {
-    position_dodge(width = 0.75)
-  } else {
-    position_dodge2(width = 0.75, preserve = "single")
-  }
-  
-  pos_jit <- position_jitterdodge(jitter.width = 0.2, dodge.width = 0.75)
-  
-  # Create base plot
-  p <- ggplot(long_format_table, aes_string(x = x_col, y = "BetaValue", fill = "Group")) +
-    theme_minimal() +
-    scale_fill_manual(values = c("guided" = "orange", "unguided" = "blue")) +
-    scale_color_manual(values = c("guided" = "orange", "unguided" = "blue")) +
-    labs(
-      x = if (use_positional_spacing) paste("Position on", unique(long_format_table$chr)) else paste("CPG + Position on", unique(long_format_table$chr)),
-      y = "Beta Value",
-      fill = "Group"
-    ) +
-    theme(axis.text.x = element_text(angle = 45, hjust = 1))
-  
-  # Add boxplots with proper grouping
+  # Step 5: Add layers based on user options
   if (use_positional_spacing && !interactive) {
     p <- p + geom_boxplot(
       aes(group = group_pos),
@@ -326,28 +270,25 @@ create_boxplot <- function(long_format_table, interactive = FALSE, use_positiona
   if (interactive) {
     p <- suppressWarnings(
       p + geom_jitter(
-        aes_string(color = "Group", text = "text"), 
+        aes(color = Group, text = text), 
         position = pos_jit, 
-        shape = 21,  # Use shape 21-25 for fillable points with borders
-        size = 2.5,  # Slightly larger to see the border
-        stroke = 0.5  # Border thickness
+        shape = 21,
+        size = 2.5,
+        stroke = 0.5
       )
     )
     return(plotly::ggplotly(p, tooltip = "text"))
   } else {
     p <- suppressWarnings(
       p + geom_jitter(
-        aes_string(fill = "Group"),  # Use fill instead of color for shape 21
+        aes(fill = Group),
         position = pos_jit, 
-        shape = 21,  # Shape that supports both fill and color
-        color = "black",  # Edge color
-        size = 2.5,      # Slightly larger size
-        stroke = 0.5      # Border thickness
-      ) +
-        # Need to add fill scale since we're using fill aesthetic
-        scale_fill_manual(values = c("guided" = "orange", "unguided" = "blue"))
+        shape = 21,
+        color = "black",
+        size = 2.5,
+        stroke = 0.5
+      )
     )
     return(p)
   }
 }
-

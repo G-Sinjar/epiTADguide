@@ -88,6 +88,7 @@ qcServer <- function(id, RGset, raw_normalised, targets, project_output_dir) {
       )
     })
     
+    #-----------------------------------------
     # Plot 1: Channel intensities
     output$plot1 <- renderPlot({
       req(RGset())
@@ -119,7 +120,7 @@ qcServer <- function(id, RGset, raw_normalised, targets, project_output_dir) {
       req(RGset(), targets())
       withProgress(message = 'Generating MDS Plot...', value = 0, {
         incProgress(0.1, detail = "Performing MDS analysis")
-        mdsPlot(RGset(), sampNames = targets()$Array, sampGroups = targets()$Sample_Group,
+        mdsPlot(RGset(), sampNames = targets()$Sample_Name, sampGroups = targets()$Sample_Group,
                 main = "Raw Beta MDS", legendNCol = 1, legendPos = "topright")
         incProgress(1, detail = "Plot ready")
       })
@@ -166,7 +167,7 @@ qcServer <- function(id, RGset, raw_normalised, targets, project_output_dir) {
                              plotQC(qc)
                            },
                            "plot3" = function() {
-                             mdsPlot(RGset(), sampNames = targets()$Array, sampGroups = targets()$Sample_Group,
+                             mdsPlot(RGset(), sampNames = targets()$Sample_Name, sampGroups = targets()$Sample_Group,
                                      main = "Raw Beta MDS", legendNCol = 1, legendPos = "topright")
                            },
                            "plot4" = function() {

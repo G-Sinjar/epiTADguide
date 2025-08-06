@@ -241,11 +241,18 @@ offtargetsServer <- function(id, project_output_dir = reactive(NULL)) {
     })
     
     output$status_output_card_body <- renderUI({
-      tags$ul(
+      msgs <- output_messages()
+      if (length(msgs) == 0) return(NULL)
+      
+      # Create a list of HTML elements
+      html_elements <- lapply(msgs, function(msg) {
+        div(style = "margin-bottom: 4px;", msg)
+      })
+      
+      # Combine all elements in a container div
+      div(
         style = "padding-left: 1.2em; margin: 0;",
-        lapply(output_messages(), function(msg) {
-          tags$li(style = "margin-bottom: 4px;", msg)
-        })
+        html_elements
       )
     })
     
@@ -294,7 +301,7 @@ offtargetsServer <- function(id, project_output_dir = reactive(NULL)) {
 
 
 
-# app.R
+'# app.R
 library(shiny)
 library(DT)
 library(readr)
@@ -320,4 +327,4 @@ server <- function(input, output, session) {
   })
 }
 
-shinyApp(ui = ui, server = server)
+shinyApp(ui = ui, server = server)'

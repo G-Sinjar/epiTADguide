@@ -1,4 +1,4 @@
-# 10_Gviz_Visualization_Module.R
+# 10_Gviz_plot_Module_v1.R
 # Author: Ghazal Sinjar
 # Date: 02.07.2025
 # Description:
@@ -13,7 +13,6 @@ library(IRanges)
 library(S4Vectors)
 library(GenomeInfoDb)
 library(BiocGenerics)
-
 
 
 # ─────────────────────────────────────
@@ -96,19 +95,21 @@ GvizPlotServer <- function(id,
     # This reactiveVal holds the actual Gviz track objects
     all_gviz_tracks_rv <- reactiveVal(NULL)
     
+    #--------------------------------------------------------------------
     # --- Static Binsize and Tissue Display ---
-    # These will now react to the current_resolution and current_tissue from tadcalling_results
+    # These react to the current_resolution and current_tissue from tadcalling_results
     output$display_binsize <- renderUI({
       print(paste("DEBUG: display_binsize: class(tadcalling_results()) is", class(tadcalling_results())))
       print(paste("DEBUG: display_binsize: names(tadcalling_results()) are", paste(names(tadcalling_results()), collapse = ", ")))
       
       req(tadcalling_results()$current_resolution()) # Get the reactive value from tadcalling_results
       # DEBUG: Check the class of the reactive object itself
-      print(paste("DEBUG: display_binsize: class(tadcalling_results()$current_resolution) is", class(tadcalling_results()$current_resolution)))
+      print(paste("DEBUG: display_binsize: class(tadcalling_results()$current_resolution) value is", class(tadcalling_results()$current_resolution())))
       
-      tags$p(paste0(tadcalling_results()$current_resolution(), " kb"), class = "form-control-plaintext")
+      p(paste0(tadcalling_results()$current_resolution(), " kb"), class = "form-control-plaintext")
     })
     
+    #--------------------------
     output$display_tissue <- renderUI({
       # DEBUG: Check what tadcalling_results() returns
       print(paste("DEBUG: display_tissue: class(tadcalling_results()) is", class(tadcalling_results())))
@@ -116,18 +117,22 @@ GvizPlotServer <- function(id,
       
       req(tadcalling_results()$current_tissue()) # Get the reactive value from tadcalling_results
       # DEBUG: Check the class of the reactive object itself
-      print(paste("DEBUG: display_tissue: class(tadcalling_results()$current_tissue) is", class(tadcalling_results()$current_tissue)))
+      print(paste("DEBUG: display_tissue: class(tadcalling_results()$current_tissue()) is", class(tadcalling_results()$current_tissue())))
       
-      tags$p(tadcalling_results()$current_tissue(), class = "form-control-plaintext")
+      p(tadcalling_results()$current_tissue(), class = "form-control-plaintext")
     })
     # --- End Static Binsize and Tissue Display ---
     
+    
+    #-------------------------------------------
+    # get chr list from tadcalling module
     observe({
       req(tadcalling_results())
       processed_chroms_list_rv(tadcalling_results()$processed_chroms_list_rv())
     })
     
     
+    #-----------------------------------------------------------
     # --- Reactive GRanges Objects from input tables ---
     gr_dmrs <- reactive({
       req(dmr_results())
@@ -194,6 +199,7 @@ GvizPlotServer <- function(id,
       })
     })
     
+    # gr_tads and subTads run only after clicing on the create plot button
     gr_TADs <- reactive({
       req(Tadcalling_TAD_tbl(), selectedChr()) # You'll need the chromosome here
       print("Reactive: gr_TADs is calculating...")
@@ -250,6 +256,7 @@ GvizPlotServer <- function(id,
           NA_character_ # Fallback if nothing selected yet
         }
       }
+      
       # Crucial: Ensure chr_name is valid before proceeding
       req(chr_name) # Ensure chr_name is not NULL or empty string
       validate(
@@ -264,7 +271,9 @@ GvizPlotServer <- function(id,
       len
     })
     
-    # observe block that updates max values of 'from' and 'to' numeric inputs
+    
+    #----------------------------------------------------------------------
+    # observe block that updates *max values* of 'from' and 'to' numeric inputs
     observe({
       chr_len <- selected_chr_length() # This depends on the *proposed* chromosome from UI
       if (!is.na(chr_len) && !is.null(chr_len) && length(chr_len) > 0) { # Add more robust check
@@ -291,7 +300,8 @@ GvizPlotServer <- function(id,
     })
     
     #----------------------------------------------------------------------------------------
-    # Handle region_type change:
+    # Handle region_type change: (DMR, Off-targets, disered): 
+    #this changes the first region choices by getting it from the table. this triggers the observeEvent(input$region_choice)
     observeEvent(input$region_type, {
       print(paste("ObserveEvent: region_type changed to", input$region_type))
       
@@ -317,7 +327,18 @@ GvizPlotServer <- function(id,
           dmrs_data <- isolate(gr_dmrs())
           if (!is.null(dmrs_data) && length(dmrs_data) > 0) {
             first_dmr <- dmrs_data[1]
-            first_dmr_id_display <- paste0(first_dmr$DMR_ID, " (", first_dmr$overlapped_gene_name, ")")
+            
+            # Access the chromosome from the object. This might be 'seqnames' or 'chr'
+            # Example assuming the columns are named 'DMR_ID', 'seqnames', and 'first_overlapped_gene'
+            first_dmr_id_display <- paste0(
+              first_dmr$DMR_ID, 
+              " (", 
+              as.character(first_dmr@seqnames), # or first_dmr$chr
+              "_", 
+              first_dmr$first_overlapped_gene, 
+              ")"
+            )
+            
             # This update will trigger observeEvent(input$region_choice)
             updateSelectizeInput(session, "region_choice", selected = first_dmr_id_display, server = TRUE)
             print("ObserveEvent: Switched to DMRs, first DMR set as selected_choice (will trigger update).")
@@ -326,7 +347,7 @@ GvizPlotServer <- function(id,
             showNotification("No DMRs found. Please load DMR data.", type = "warning")
             print("ObserveEvent: Switched to DMRs, but no data available to pre-select.")
           }
-        } else if (input$region_type == "Off-targets") {
+        }else if (input$region_type == "Off-targets") {
           offtargets_data <- isolate(gr_offtargets())
           if (!is.null(offtargets_data) && length(offtargets_data) > 0) {
             first_offtarget <- offtargets_data[1]
@@ -345,6 +366,7 @@ GvizPlotServer <- function(id,
     
     #------------------------------------------------------------------------
     # --- Region Selection Logic (Dropdown) ---
+    # handels choices appearing and choosing one of them   
     output$region_selector <- renderUI({
       req(input$region_type)
       
@@ -355,10 +377,20 @@ GvizPlotServer <- function(id,
         print("renderUI: region_selector for type DMRs")
         if (!is.null(gr_dmrs()) && length(gr_dmrs()) > 0) {
           dmrs <- gr_dmrs()
-          current_choices <- paste0(dmrs$DMR_ID, " (", dmrs$seqnames,"_" ,dmrs$overlapped_gene_name, ")")
+          
+          # Construct the gene part of the string conditionally
+          gene_part <- ifelse(
+            is.na(dmrs$first_overlapped_gene),
+            "",  # If gene is NA, add an empty string
+            paste0("_", dmrs$first_overlapped_gene) # If gene is not NA, add "_GeneName"
+          )
+          
+          # Combine everything to create the full display string
+          current_choices <- paste0(dmrs$DMR_ID, " (", as.character(seqnames(dmrs)), gene_part, ")")
+          
           names(current_choices) <- current_choices
           
-          # If the input$region_choice already has a value, try to keep it.
+          # The rest of your code remains the same
           if (!is.null(input$region_choice) && input$region_choice %in% current_choices) {
             selected_choice <- input$region_choice
           } else if (length(current_choices) > 0) {
@@ -410,7 +442,7 @@ GvizPlotServer <- function(id,
       current_chr_name <- NULL
       if (input$region_type == "DMRs") {
         req(gr_dmrs())
-        selected_dmr_id <- sub("^(\\S+)\\s.*$", "\\1", input$region_choice)
+        selected_dmr_id <- str_extract(input$region_choice, "^\\S+")
         selected_gr <- gr_dmrs()[gr_dmrs()$DMR_ID == selected_dmr_id]
         print(paste("ObserveEvent: Selected DMR ID for update:", selected_dmr_id))
       } else if (input$region_type == "Off-targets") {
@@ -599,6 +631,9 @@ GvizPlotServer <- function(id,
       req(all_gviz_tracks_rv())
       req(selectedChr(), selectedRange()[1], selectedRange()[2]) # Ensure these are also set (should be from create_plot)
       
+      # Debug print
+      print(paste("ref_group value:", dmr_results()$ref_group()))
+      print(paste("ref_group class:", class(dmr_results()$ref_group())))
       
       withProgress(message = 'Rendering Gviz Plot...', value = 0, {
         
@@ -623,7 +658,7 @@ GvizPlotServer <- function(id,
         
         incProgress(0.8, detail = "Drawing plot")
         print(paste0("renderPlot: Calling plotGvizTracks for Chr:", chr, " From:", from, " To:", to))
-        plotGvizTracks(tracks = tracks_to_plot, from = from, to = to)
+        plotGvizTracks(tracks = tracks_to_plot, from = from, to = to, pheno = dmr_results()$pheno(), gr_cpgs= gr_cpgs(), ref_group= dmr_results()$ref_group())
         print("renderPlot: Plotting complete.")
         
         incProgress(1, detail = "Done")
@@ -645,7 +680,7 @@ GvizPlotServer <- function(id,
         # REQUIRE that the tracks have been generated
         # This means the user must have clicked "Create Plot" at least once,
         # or used the zoom/pan buttons.
-        req(all_gviz_tracks_rv())
+        req(all_gviz_tracks_rv(), dmr_results()$pheno(), gr_cpgs())
         
         # Get the already generated tracks
         tracks_for_download <- all_gviz_tracks_rv()
@@ -664,7 +699,7 @@ GvizPlotServer <- function(id,
         
         print("Download: Using existing tracks for PDF.")
         pdf(file = file, width = 12, height = 8) # Specify output device and dimensions
-        plotGvizTracks(tracks_for_download, from = current_from, to = current_to)
+        plotGvizTracks(tracks_for_download, from = current_from, to = current_to, pheno = dmr_results()$pheno(), gr_cpgs=gr_cpgs())
         dev.off()
         print("Download: PDF creation complete.")
       }
@@ -821,112 +856,3 @@ GvizPlotServer <- function(id,
 
 
 
-'# ─────────────────────────────────────
-# Main Shiny App (app.R equivalent)
-# ─────────────────────────────────────
-source("../utils/GVIZ_plot_utils.R")
-
-# This is a static object that will be passed to the DMR module
-message("Loading/Preparing tx_gr_filtered for annotation...")
-edb <- EnsDb.Hsapiens.v86
-options(ucscChromosomeNames = TRUE)
-tx_gr <- genes(edb)
-tx_gr_filtered_global <- keepSeqlevels(tx_gr, standardChromosomes(tx_gr), pruning.mode = "coarse")
-seqlevelsStyle(tx_gr_filtered_global) <- "UCSC"
-message("tx_gr_filtered prepared.")
-#-------------------------------------------------------------------------
-# Chromosome Lengths Table from BSgenome
-library(BSgenome.Hsapiens.UCSC.hg38)
-hg38 <- BSgenome.Hsapiens.UCSC.hg38
-chr_lengths <- seqlengths(hg38)
-chr_size_df_global <- data.frame(
-  Chromosome = names(chr_lengths),
-  Length = as.numeric(chr_lengths),
-  stringsAsFactors = FALSE
-)
-print("Global: chr_size_df_global loaded.")
-#------------------------------------------------------------------
-# CpG Islands - Loaded once globally
-# Uses the loadCpGIslands_gr function from utils/GVIZ_plot_utils.R
-gr_cpgIslands_global <- loadCpGIslands_gr(destfile = "cpgIslandExt_hg38.txt.gz")
-print(paste("Global: gr_cpgIslands_global loaded. Number of CpG Islands:", length(gr_cpgIslands_global)))
-#------------------------------
-
-dmr_list <- reactiveVal(NULL)
-annotated <- reactiveVal(NULL)
-offtargets_combined <- reactiveVal(NULL)
-tadcalling_results_dummy <- reactiveVal(NULL)
-print("Main App: Initializing data loading...")
-
-# Replace with your actual file paths
-dmr_list_path <- "../intermediate_data/DMRs_cutoff_neg0.15_to_0.15_B0_2025-06-24.rds"
-annotated_path <- "../intermediate_data/annotated_object_20250627.rds"
-offtargets_path <- "./intermediate_data/guide1_guide2_guide3_guide4_guide5_guide6.rds"
-tad_subtad_path <- "../epic-test/TADcaller_results/4DNFIIH3SM5N/TADcaller_Results/TADs_CAKI2/processed_tads"
-
-
-# Create a list of autosomal chromosomes (1 to 22)
-autosomal_chrs <- paste0("chr", 1:22)
-sex_chrs <- c("chrX", "chrY")
-all_chrs <- c(autosomal_chrs, sex_chrs)
-#print(all_chrs)
-
-
-
-results_dmr <- readRDS(dmr_list_path)
-results_anno <- readRDS(annotated_path)
-
-dmr_list <- reactive({
-  list(dmr_table = reactiveVal(results_dmr$dmr_table),
-       pheno = reactiveVal(results_dmr$pheno)  )})
-
-annotated <- reactive({ list(
-  annotated_table = reactiveVal(results_anno$annotated_table)
-)
-})
-
-
-if (file.exists(offtargets_path)) {
-  offtargets_combined(reactiveVal(readRDS(offtargets_path)))
-  print(paste("Main App: Off-targets file loaded from:", offtargets_path))
-} else {
-  print(paste("Main App: ERROR - Off-targets file not found:", offtargets_path))
-}
-
-if (file.exists(tad_subtad_path)) {
-  print("Main App: Tads_SubTADs path excists")
-} else {
-  print("Main App: ERROR - STads_SubTADs path doesnt excists")
-}
-print("Main App: Data loading complete.")
-
-tadcalling_results_dummy(list(
-  current_tissue = reactiveVal("CAKI2"),
-  current_resolution = reactiveVal(25),
-  processed_output_dir= reactiveVal(tad_subtad_path),
-  processed_chroms_list_rv = reactiveVal(all_chrs)
-))
-
-ui <- page_navbar(
-  title = "EPIC Array Pipeline",
-  theme = bs_theme(version = 5, bootswatch = "flatly"),
-  nav_panel("Final Plot", GvizPlotUI("gviz_test_id"))
-)
-
-server <- function(input, output, session) {
-  print("Main Server started.")
-  
-  GvizPlotServer(
-    id = "gviz_test_id",
-    dmr_results = dmr_list,
-    annotation_results = annotated,
-    offtarget_table = offtargets_combined,
-    tadcalling_results = tadcalling_results_dummy,
-    chr_size_df = chr_size_df_global,
-    tx_gr_filtered = tx_gr_filtered_global,
-    gr_cpgIslands = gr_cpgIslands_global
-  )
-  print("Main Server: GvizPlotServer module called.")
-}
-
-shinyApp(ui, server)'

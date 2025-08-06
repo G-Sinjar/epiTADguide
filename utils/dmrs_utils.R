@@ -11,32 +11,32 @@ conflicts_prefer(base::setdiff)
 # ----------------------------------------------------------------------
 # 1. Run bumphunter to detect DMRs
 # ----------------------------------------------------------------------
-
 #' Run Bumphunter to detect Differentially Methylated Regions (DMRs)
 #'
 #' This function applies the bumphunter algorithm to identify differentially
-#' methylated regions (DMRs) using a GenomicRatioSet or RGChannelSet object.
-#' It includes internal error handling for both phenotype extraction and
-#' the bumphunter process.
+#' methylated regions (DMRs) by comparing a specified group against a
+#' defined reference group.
 #'
 #' @param rgSet A GenomicRatioSet or RGChannelSet object (from the minfi package).
+#' @param ref_sample_group Character. The name of the group to be used as the
+#'   reference level for the bumphunter comparison. Must be a valid level in
+#'   the 'Sample_Group' column.
+#' @param tested_group_colname Character. The exact name of the column in the
+#'   design matrix that corresponds to the group to be tested against the
+#'   reference.
 #' @param cutoff Numeric. Methylation cutoff threshold for bump detection.
 #' @param B Integer. Number of permutations to use for significance estimation (0 = none).
-#' @param num_cores 
+#' @param num_cores Integer. Number of cores to use for parallel processing.
 #'
-#' @return A list containing:
-#' \describe{
-#'   \item{DMR_table}{A data.frame with the identified DMRs. Returns an empty data.frame if no DMRs are found or NULL on error.}
-#'   \item{pd}{Phenotype data.frame extracted from rgSet.}
-#' }
-#' Returns NULL if bumphunter fails to run.
+#' @return A data.frame with the identified DMRs. Returns an empty data.frame
+#'   if no DMRs are found or NULL on error.
 #'
 #' @importFrom minfi pData
 #' @importFrom bumphunter bumphunter
 #' @importFrom doParallel registerDoParallel
 #'
 #' @export
-run_bumphunter_dmrs <- function(rgSet, cutoff = 0.15, B = 0, num_cores = 1) {
+run_bumphunter_dmrs <- function(rgSet, ref_sample_group, tested_group_colname, cutoff = 0.15, B = 0, num_cores = 1) {
   # Extract phenotype data
   pd <- tryCatch({
     pData(rgSet)
@@ -51,23 +51,39 @@ run_bumphunter_dmrs <- function(rgSet, cutoff = 0.15, B = 0, num_cores = 1) {
   # Prepare phenotype factor
   sample_group <- pd$Sample_Group
   if (!is.factor(sample_group)) sample_group <- factor(sample_group)
-  sample_group <- relevel(sample_group, ref = "unguided")
+  
+  # Check if the reference group exists
+  if (!ref_sample_group %in% levels(sample_group)) {
+    stop(paste("Reference group '", ref_sample_group, "' not found in 'Sample_Group' levels."))
+  }
+  
+  # Set the reference level
+  sample_group <- relevel(sample_group, ref = ref_sample_group)
   
   # Create design matrix
   designMatrix <- model.matrix(~ sample_group)
+  
+  # Find the column index of the tested group
+  group_col_index <- which(colnames(designMatrix) == tested_group_colname)
+  
+  # Error handling for the tested group name
+  if (length(group_col_index) == 0) {
+    stop(paste("The tested group column '", tested_group_colname, "' was not found in the design matrix.
+               Available columns are:", paste(colnames(designMatrix), collapse = ", ")))
+  }
   
   # Set up parallel backend
   if (!requireNamespace("doParallel", quietly = TRUE)) {
     stop("Package 'doParallel' is required for parallel execution.")
   }
-  doParallel::registerDoParallel(cores = num_cores) 
+  doParallel::registerDoParallel(cores = num_cores)  
   
   # Run bumphunter with error handling
   dmrs <- tryCatch({
     bumphunter(
       rgSet,
       design = designMatrix,
-      coef = 2,
+      coef = group_col_index, # <--- Dynamic coefficient based on user input
       cutoff = cutoff,
       B = B,
       type = "Beta",
@@ -87,15 +103,13 @@ run_bumphunter_dmrs <- function(rgSet, cutoff = 0.15, B = 0, num_cores = 1) {
   dmrs_tbl <- as.data.frame(dmrs$table)
   rownames(dmrs_tbl) <- NULL
   
-  return(list(
-    DMR_table = dmrs_tbl,
-    pd = pd
-  ))
+  return(dmrs_tbl) # <--- Returns only the data frame
 }
 
-# test function
-#rgset <- readRDS("C:/Users/ghaza/Documents/ghazal/Bioinformatik_Fächer/Masterarbeit_Project/Scripts/R_Scripts/intermediate_data/filtered_GRset_SWAN_SNP_removed_SexChr_kept_20250605.rds")
-#dmr <- run_bumphunter_dmrs(rgSet =  rgset, num_cores = 6 )
+
+
+
+
 
 # ----------------------------------------------------------------------
 # 2. Convert DMRs to GRanges and process metadata

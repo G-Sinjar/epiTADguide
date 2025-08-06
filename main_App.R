@@ -12,6 +12,7 @@ library(writexl) # For excel downloads in filtering module
 library(openxlsx) # For excel downloads in filtering module
 library(readr)
 library(dplyr) # For data manipulation (filter, select, mutate, bind_rows)
+library(stringr)
 library(reticulate) # ADDED: Needed for Python integration in tadcalling_module
 library(processx) # ADDED: Needed for running external processes (Java TADcaller)
 # both libraries are automaticaly loaded when they are needed -> to Do test app without thoes
@@ -28,7 +29,7 @@ source("modules/02_QC_Module.R")
 source("modules/03_Normalisation_Module.R")
 source("modules/04_filtering_Module.R")
 source("modules/05_Annotation_Module.R")
-source("modules/06_DMR_identification_Module.R")
+source("modules/06_DMR_identification_Module_v1.R")
 source("utils/dmrs_utils.R")
 source("utils/preprocessing_utils.R")
 source("modules/07_boxplots_Module.R")
@@ -302,7 +303,6 @@ server <- function(input, output, session) {
   # --- Navigate to DMR Boxplots tab ---
   observeEvent(input$to_boxplots, {
     req(dmr_results(), annotation_results())
-    
     enable_tab("DMR Boxplots")
     updateNavbarPage(session, "main_tabs", selected = "DMR Boxplots")
     boxplotServer(

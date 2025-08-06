@@ -39,6 +39,7 @@ pheno_factor <- relevel(pheno_factor, ref = "unguided")
 
 # 3. designMatrix
 designMatrix <- model.matrix(~ pheno_factor)
+colnames(designMatrix)[2] # "pheno_factorguided"
 ```
 
 

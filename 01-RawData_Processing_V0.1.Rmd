@@ -23,11 +23,9 @@ The preview shows you a rendered HTML copy of the contents of the editor. Conseq
 ```{r}
 if (!require("BiocManager", quietly = TRUE))
     install.packages("BiocManager")
-
 BiocManager::install("minfi")
 
 library(minfi)
-
 ```
 
 # Reading the SampleSheet file
@@ -38,10 +36,7 @@ targets <- read.metharray.sheet(RawDataDir)
 
 View(targets)
 
-writexl::write_xlsx(targets, "./Output/Samples-targets.xlsx")
-
-
-
+#writexl::write_xlsx(targets, "./Output/Samples-targets.xlsx")
 ```
 
 # Load methydata from idat files into an object of the class RGChannelSet

@@ -126,6 +126,8 @@ filter_data_server <- function(id, RGset, raw_normalised, normalized_all_methods
     # Reactive value to store the final filtered GenomicRatioSet
     filtered_grset <- reactiveVal(NULL)
     save_rds_status_msg <- reactiveVal("")
+    last_used_method <- reactiveVal(NULL) 
+    
     
     # Disable the save button by default using shinyjs
     shinyjs::disable("save_grset_rds")
@@ -285,11 +287,26 @@ filter_data_server <- function(id, RGset, raw_normalised, normalized_all_methods
         stats_data(stats)
         
         
+        # Get the beta values
+        beta_values <- getBeta(ratio_geno)
         
-        # Store beta/mval and object
-        beta_table(round(getBeta(ratio_geno), 5))
-        mval_table(round(getM(ratio_geno), 5))
-        filtered_grset(ratio_geno) # Store the final filtered object
+        # Create the new column names
+        new_names <- paste(pData(ratio_geno)$Slide, 
+                           pData(ratio_geno)$Array, 
+                           pData(ratio_geno)$Sample_Name, 
+                           sep = "_")
+        
+        # Assign the new column names to the beta_values data frame
+        colnames(beta_values) <- new_names
+        beta_table(round(beta_values, 5))
+        
+        # the same for the M-values
+        mval_values <- getM(ratio_geno)
+        colnames(mval_values) <- new_names
+        mval_table(round(mval_values, 5))
+        
+        # Store the final filtered object
+        filtered_grset(ratio_geno) 
         
         
         # Save automatically with descriptive name
@@ -340,9 +357,10 @@ filter_data_server <- function(id, RGset, raw_normalised, normalized_all_methods
           status(paste0(status(), "\n❌ Error automatically saving RDS: ", e$message))
         })
         # --- End of Automatic Saving ---
+        last_used_method(input$norm_method)
       })
     })
-    
+    #------------------------------------------------------------------
     # Reactive container for the data table to be displayed
     displayed_table_data <- reactive({
       if (input$value_type == "Beta values") {
@@ -353,7 +371,7 @@ filter_data_server <- function(id, RGset, raw_normalised, normalized_all_methods
         mval_table()
       }
     })
-    
+    #----------------------------------------------------
     output$value_table <- DT::renderDT({
       req(displayed_table_data()) # Ensure there's data to display
       datatable(
@@ -369,7 +387,7 @@ filter_data_server <- function(id, RGset, raw_normalised, normalized_all_methods
         rownames = TRUE # Keep row names (e.g., CpG IDs)
       )
     })
-    
+    #--------------------------------------------
     # Render UI elements
     output$filter_stats <- renderTable({
       req(stats_data())
@@ -391,7 +409,7 @@ filter_data_server <- function(id, RGset, raw_normalised, normalized_all_methods
       }
     })
     
-    
+    #-----------------------------------------------
     # Download Handlers
     output$download_beta <- downloadHandler(
       filename = function() {
@@ -418,12 +436,12 @@ filter_data_server <- function(id, RGset, raw_normalised, normalized_all_methods
         }
       }
     )
-    
     # Return filtered output reactives
     return(list(
       filtered_data = filtered_grset,
       beta_vals = beta_table,
-      m_vals = mval_table
+      m_vals = mval_table,
+      norm_method_chosen = last_used_method
     ))
   })
 }
@@ -452,7 +470,6 @@ ui <- page_navbar(
 )
 
 
-# Corrected test module server
 server <- function(input, output, session) {
   # Load your data first
   # Ensure these paths are correct for your environment
@@ -460,14 +477,29 @@ server <- function(input, output, session) {
   preprocessed_data_object <- readRDS("C:/Users/ghaza/Documents/ghazal/Bioinformatik_Fächer/Masterarbeit_Project/Scripts/R_Scripts/intermediate_data/preprocessed_data.rds")
   project_base_path <- "./main_app_tests"
   
-  
   # Create reactive expressions for each required input of the module
   reactive_RGset <- reactive({ preprocessed_data_object$RGset })
   reactive_raw_normalised <- reactive({ preprocessed_data_object$raw_normalised })
-  reactive_normalized_all_methods_list <- reactive({ all_normalized_methods_data })
-  reactive_project_output_dir <- reactive({ project_base_path }) 
+  reactive_project_output_dir <- reactive({ project_base_path })
   
   
+  # Each element of the list should be a reactive function itself.
+  reactive_normalized_all_methods_list <- reactive({
+    
+    # Get the names from the loaded data
+    method_names <- names(all_normalized_methods_data)
+    
+    # Create a list where each element is a reactive function
+    reactive_list <- lapply(method_names, function(method_name) {
+      reactive({
+        # This reactive will return the corresponding data from the loaded object
+        all_normalized_methods_data[[method_name]]
+      })
+    })
+    names(reactive_list) <- method_names
+    
+    return(reactive_list)
+  })
   
   filtered_output <- filter_data_server(
     "myFilterModule",
@@ -476,7 +508,6 @@ server <- function(input, output, session) {
     normalized_all_methods = reactive_normalized_all_methods_list,
     project_output_dir = reactive_project_output_dir
   )
-  
 }
 
 

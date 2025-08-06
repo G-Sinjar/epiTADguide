@@ -1,6 +1,6 @@
-# 06_DMR_identification_Module.R
+# 06_DMR_identification_Module_v1.R
 # Author: Ghazal Sinjar
-# Date: 17.06.2025
+# Date: 04.08.2025
 # Description:
 # This Shiny module provides UI and server logic for identifying Differentially Methylated Regions (DMRs).
 # It utilizes the bumphunter algorithm to detect DMRs based on specified methylation cutoff values and permutation settings.
@@ -19,6 +19,10 @@ dmrs_ui <- function(id) {
       
       useShinyjs(), 
       
+      # --- NEW UI: Dynamic dropdowns for group selection ---
+      uiOutput(ns("ref_group_select")),
+      uiOutput(ns("tested_group_select")),
+      
       # Input: methylation cutoff range
       numericInput(ns("cutoff_from"), "Cutoff from (min -1 to 0):", value = -0.15, min = -1, max = 0, step= 0.01),
       numericInput(ns("cutoff_to"), "Cutoff to (0 to 1):", value = 0.15, min = 0, max = 1, step = 0.01),
@@ -30,7 +34,7 @@ dmrs_ui <- function(id) {
         style = "display: none;",
         helpText("The cutoff defines how large a difference in Beta-values (methylation ratio) is needed for a region to be considered a candidate. For example, a cutoff of 0.2 means regions with Beta-value differences greater than ±0.2 (i.e., 20%) between groups will be selected. You can specify one value (symmetric around zero) or two values (asymmetric cutoff).")
       ),
-
+      
       #----------------------------------------------------------------
       # Input: number of permutations
       numericInput(ns("B_val"), "Number of permutations (B):", value = 0, min = 0),
@@ -42,7 +46,7 @@ dmrs_ui <- function(id) {
         style = "display: none;",
         helpText("B controls the number of permutations used to assess significance, reducing false positives. More permutations = higher accuracy. If the number of samples is large this can be set to a large number, such as 1000. Note that this will take longer.")
       ),
-
+      
       #-------------------------------------------------------
       # Core options radio buttons
       radioButtons(
@@ -68,7 +72,7 @@ dmrs_ui <- function(id) {
                  "  * **'Choose cores manually'**: Allows you to specify an exact number of cores. Use this if you have specific performance requirements or if 'Detected cores - 1' does not suit your needs (e.g., if you want to use fewer cores to save resources for other applications)."
         )
       ),
-
+      
       #-----------------------------------------------------
       # Run button
       actionButton(ns("run_dmr"), "Detect DMRs"),
@@ -100,10 +104,10 @@ dmrs_ui <- function(id) {
     
     # Main output panel
     div(
-      style = "padding-left: 15px; padding-right: 15px;", # Add right padding for balance
+      style = "padding-left: 15px; padding-right: 15px;",
       layout_columns(
-        col_widths = c(12), # This specifies one column that takes up all 12 Bootstrap columns
-        fill = TRUE, # Make sure the card fills the available space
+        col_widths = c(12),
+        fill = TRUE,
         card(
           card_title("DMR Identification Status"),
           verbatimTextOutput(ns("dmr_status"), placeholder = TRUE)
@@ -112,7 +116,7 @@ dmrs_ui <- function(id) {
       
       # Bottom section: DMR Table
       div(
-        style = "margin-top: 20px;", # Add some space above the table section
+        style = "margin-top: 20px;",
         h4("Detected DMRs"),
         helpText("Note: A Differentially Methylated Region (DMR) containing just one CpG site is equivalent to a Differentially Methylated Position (DMP)."),
         br(),
@@ -134,23 +138,72 @@ dmrs_ui <- function(id) {
 dmrs_server <- function(id, filtered_rgset_reactive, tx_gr_filtered_static,project_output_dir) {
   moduleServer(id, function(input, output, session) {
     
-    # Inside dmrs_server
-    observeEvent(input$toggle_table_notes, {
-      shinyjs::toggle("table_notes_div")
-    })
-    
-    # Reactive value to store status text
-    dmr_status_text <- reactiveVal("Ready to identify DMRs.")
     # Reactive value to store final DMR and pheno tables
     dmr_result <- reactiveVal(NULL)
     pheno_result <- reactiveVal(NULL)
     
+    # Reactive value to store status text
+    dmr_status_text <- reactiveVal("Ready to identify DMRs.")
+    
     # Reactive value to store the detected number of cores for display
     detected_cores_display <- reactiveVal(NULL)
     
+    #-----------------------------------------------------------------
+    # Reactive expression for phenotype data (pData)
+    pd_reactive <- reactive({
+      req(filtered_rgset_reactive())
+      minfi::pData(filtered_rgset_reactive())
+    })
+    
+    # Reactive expression for a design matrix to get column names for the UI
+    design_matrix_colnames_reactive <- reactive({
+      req(pd_reactive())
+      req(input$ref_group)
+      
+      pd <- pd_reactive()
+      sample_group <- pd$Sample_Group
+      if (!is.factor(sample_group)) sample_group <- factor(sample_group)
+      
+      # Check if the reference group exists before releveling
+      if (!input$ref_group %in% levels(sample_group)) {
+        return(NULL)
+      }
+      
+      sample_group <- relevel(sample_group, ref = input$ref_group)
+      designMatrix <- model.matrix(~ sample_group)
+      
+      # Return all column names except the intercept
+      colnames(designMatrix)[-1]
+    })
+    
+    # Dynamic UI for reference group selection
+    output$ref_group_select <- renderUI({
+      ns <- session$ns
+      pd <- pd_reactive()
+      req(pd)
+      
+      sample_groups <- unique(pd$Sample_Group)
+      selectInput(ns("ref_group"),
+                  "Choose reference sample group:",
+                  choices = sample_groups)
+    })
+    
+    # Dynamic UI for tested group selection
+    output$tested_group_select <- renderUI({
+      ns <- session$ns
+      design_colnames <- design_matrix_colnames_reactive()
+      req(design_colnames)
+      
+      selectInput(ns("tested_group"),
+                  "Choose group to test against the reference:",
+                  choices = design_colnames)
+    })
+    
+    #---------------------------------------------------
     # Display current status
     output$dmr_status <- renderText({dmr_status_text()})
     
+    #------------------------------------------------
     # Reactive expression for the number of cores to be used in calculations
     num_cores_to_use <- reactive({
       if (input$core_choice == "auto_cores") {
@@ -165,6 +218,7 @@ dmrs_server <- function(id, filtered_rgset_reactive, tx_gr_filtered_static,proje
       }
     })
     
+    #-------------------------------------------------
     # Dynamic UI for manual core selection
     output$manual_cores_input <- renderUI({
       ns <- session$ns
@@ -172,7 +226,7 @@ dmrs_server <- function(id, filtered_rgset_reactive, tx_gr_filtered_static,proje
         max_detected_cores <- if (requireNamespace("parallel", quietly = TRUE)) {
           parallel::detectCores()
         } else {
-          4 # Fallback if parallel package is not available
+          4
         }
         tagList(
           numericInput(
@@ -192,17 +246,18 @@ dmrs_server <- function(id, filtered_rgset_reactive, tx_gr_filtered_static,proje
       }
     })
     
+    #---------------------------------------------------
     # Observe core_choice to display detected cores information
     observeEvent(input$core_choice, {
       if (input$core_choice == "auto_cores") {
         current_detected_cores <- if (requireNamespace("parallel", quietly = TRUE)) {
           max(1, parallel::detectCores(logical = FALSE) - 1)
         } else {
-          1 # Fallback if 'parallel' package is not available
+          1
         }
         detected_cores_display(paste("The number of physical CPUs/cores detected: ",current_detected_cores+1 , " \n.The number of cores to be used for the analysis: ",current_detected_cores, "."))
       } else {
-        detected_cores_display(NULL) # Clear the text if manual is chosen
+        detected_cores_display(NULL)
       }
     })
     
@@ -213,32 +268,26 @@ dmrs_server <- function(id, filtered_rgset_reactive, tx_gr_filtered_static,proje
       }
     })
     
+    #---------------------------------------------------
     # --- HINT SERVER LOGIC ADDITIONS START ---
-    observeEvent(input$toggle_cutoff_help, {
-      shinyjs::toggle("cutoff_help_text_div")
-    })
-    
-    observeEvent(input$toggle_B_help, {
-      shinyjs::toggle("B_help_text_div")
-    })
-    
-    observeEvent(input$toggle_cores_help, {
-      shinyjs::toggle("cores_help_text_div")
-    })
+    observeEvent(input$toggle_cutoff_help, { shinyjs::toggle("cutoff_help_text_div") })
+    observeEvent(input$toggle_B_help, { shinyjs::toggle("B_help_text_div") })
+    observeEvent(input$toggle_cores_help, { shinyjs::toggle("cores_help_text_div") })
+    observeEvent(input$toggle_table_notes, { shinyjs::toggle("table_notes_div") })
     # --- HINT SERVER LOGIC ADDITIONS END ---
     
+    #---------------------------------------------------
     # Helper function to generate a consistent filename base
-    get_dmr_base_filename <- function(cutoff_from, cutoff_to, B_val) {
-      paste0("DMRs_cutoff_",
-             format(cutoff_from, nsmall = 2), "_",
+    get_dmr_base_filename <- function(cutoff_from, cutoff_to, B_val, ref_group, tested_group) {
+      paste0("DMRs_", ref_group, "_vs_", tested_group,
+             "_cutoff_", format(cutoff_from, nsmall = 2), "_",
              format(cutoff_to, nsmall = 2), "_B", B_val)
     }
     
     #------------------------------------------------------------
     # Main observer: Run on "Detect DMRs" button click
     observeEvent(input$run_dmr, {
-      req(filtered_rgset_reactive())
-      req(tx_gr_filtered_static)
+      req(filtered_rgset_reactive(), tx_gr_filtered_static, input$ref_group, input$tested_group)
       
       current_num_cores <- num_cores_to_use()
       if (is.null(current_num_cores) || current_num_cores < 1) {
@@ -251,59 +300,60 @@ dmrs_server <- function(id, filtered_rgset_reactive, tx_gr_filtered_static,proje
       
       withProgress(message = "Running DMR detection...", value = 0, {
         
+        # Step 1: get inputs and validate them
+        ## current_rgset
         current_rgset <- filtered_rgset_reactive()
-        
         if (is.null(current_rgset)) {
           dmr_status_text("❌ Error: Input data 'filtered_rgset' is missing.")
           return()
         }
         
+        ## both cutoff values
         if (input$cutoff_from >= input$cutoff_to) {
           dmr_status_text("❌ Cutoff 'from' must be less than 'to'.")
           return()
         }
-        
         cutoff_vals <- c(input$cutoff_from, input$cutoff_to)
+        
+        ## B value
         B_val <- input$B_val
         
-        incProgress(0.1, detail = paste("Running bumphunter with", current_num_cores, "cores..."))
+        dmr_status_text(paste0(
+          dmr_status_text(), 
+          "\nComparison: '", input$tested_group, "' vs. reference '", input$ref_group, "'."
+        ))
+        
+        # Step 2: run bumphunter
+        incProgress(0.1, detail = "Running bumphunter...")
         dmrs_step1_result <- tryCatch({
-          result <- run_bumphunter_dmrs(
+          run_bumphunter_dmrs(
             rgSet = current_rgset,
+            ref_sample_group = input$ref_group,
+            tested_group_colname = input$tested_group,
             cutoff = cutoff_vals,
             B = B_val,
             num_cores = current_num_cores
           )
-          
-          if (!("DMR_table" %in% names(result))) {
-            stop("Missing 'DMR_table' in the result returned by run_bumphunter_dmrs().")
-          }
-          if (!("pd" %in% names(result))) {
-            stop("Missing 'pd' in the result returned by run_bumphunter_dmrs().")
-          }
-          
-          pheno_result(result$pd)
-          result
         }, error = function(e) {
           dmr_status_text(paste(dmr_status_text(), "\n❌ Error during DMR detection:\n", e$message))
           return(NULL)
         })
-        
+        ## check bumphunter results
         if (is.null(dmrs_step1_result)) {
-          dmr_status_text(paste(dmr_status_text(), "\n❌ Step 1 failed ."))
+          dmr_status_text(paste(dmr_status_text(), "\n❌ Step 1 failed."))
           return()
         }
-        if (nrow(dmrs_step1_result$DMR_table) == 0) {
+        if (nrow(dmrs_step1_result) == 0) {
           dmr_status_text(paste(dmr_status_text(), "\n❌ No DMRs found."))
           return()
         }
+        dmr_status_text(paste0(dmr_status_text(), sprintf("\n✅ Step 1 completed: %d DMRs found.", nrow(dmrs_step1_result))))
         
-        dmr_status_text(paste0(dmr_status_text(), sprintf("\n✅ Step 1 completed: %d DMRs found.", nrow(dmrs_step1_result$DMR_table))))
-        
+        # Step 3: convert DMRs to genomic ranges
         dmr_status_text(paste0(dmr_status_text(), "\nStep 2: Converting DMRs to genomic ranges (GRanges)..."))
         incProgress(0.3, detail = "Converting to GRanges...")
         GR_Dmrs <- tryCatch({
-          prepare_dmrs_granges(dmrs_step1_result$DMR_table)
+          prepare_dmrs_granges(dmrs_step1_result)
         }, error = function(e) {
           dmr_status_text(paste(dmr_status_text(), "\n❌ Error in Step 2:", e$message))
           return(NULL)
@@ -314,6 +364,7 @@ dmrs_server <- function(id, filtered_rgset_reactive, tx_gr_filtered_static,proje
         }
         dmr_status_text(paste0(dmr_status_text(), "\n✅ Step 2 completed!"))
         
+        # Step 4: Annotate DMRs
         dmr_status_text(paste0(dmr_status_text(), "\nStep 3: Annotating DMRs with gene information..."))
         incProgress(0.6, detail = "Annotating with genes...")
         GR_Dmrs_annotated <- tryCatch({
@@ -333,6 +384,7 @@ dmrs_server <- function(id, filtered_rgset_reactive, tx_gr_filtered_static,proje
           "\n✅ Step 3 completed: ", num_annotated, " DMRs overlapped with genes."
         ))
         
+        # Step 5: adjust DMR table to output to user
         dmr_status_text(paste0(dmr_status_text(), "\nStep 4: Preparing final DMR table..."))
         incProgress(0.9, detail = "Finalizing table...")
         
@@ -346,27 +398,34 @@ dmrs_server <- function(id, filtered_rgset_reactive, tx_gr_filtered_static,proje
         dmr_result(df)
         dmr_status_text(paste0(dmr_status_text(), "\n✅ Step 4 completed: DMR table is ready for download."))
         
-        base_filename <- get_dmr_base_filename(input$cutoff_from, input$cutoff_to, input$B_val)
-        output_dir_full <- file.path(project_output_dir(), "DMR_results") # Create a specific folder for DMRs
+        # Step 6: Save full results as rds automatically
+        base_filename <- get_dmr_base_filename(input$cutoff_from, input$cutoff_to, input$B_val, input$ref_group, input$tested_group)
+        output_dir_full <- file.path(project_output_dir(), "DMR_results")
         if (!dir.exists(output_dir_full)) dir.create(output_dir_full, recursive = TRUE)
-        output_path <- file.path(output_dir_full, paste0(base_filename, "_", format(Sys.Date(), "%Y%m%d"), ".rds")) 
+        output_path <- file.path(output_dir_full, paste0(base_filename, "_", format(Sys.Date(), "%Y%m%d"), ".rds"))
         
+        # Get the phenotype data for saving
+        pheno_data <- pd_reactive()
         
         saveRDS(list(
           dmr_table = dmr_result(),
-          pheno_data = pheno_result()
+          pheno_data = pheno_data
         ), file = output_path)
         dmr_status_text(paste0(dmr_status_text(), "\n📁 Saved full results automatically to ", output_path))
       })
     })
     
+    #-------------------------------------------------
+    # render the table in the main panel
     output$dmr_table <- DT::renderDataTable({
-      req(dmr_result())  
+      req(dmr_result())
       datatable(dmr_result(), options = list(scrollX = TRUE,
                                              pageLength = 10,
                                              autoWidth = TRUE))
     })
     
+    #-------------------------------------------------
+    # view the download button as soon as DMR table is ready
     output$download_ui <- renderUI({
       req(dmr_result())
       tagList(
@@ -375,9 +434,11 @@ dmrs_server <- function(id, filtered_rgset_reactive, tx_gr_filtered_static,proje
       )
     })
     
+    #-------------------------------------------------
+    # Handel clicking on Download button
     output$download_dmr <- downloadHandler(
       filename = function() {
-        base_name <- get_dmr_base_filename(input$cutoff_from, input$cutoff_to, input$B_val)
+        base_name <- get_dmr_base_filename(input$cutoff_from, input$cutoff_to, input$B_val, input$ref_group, input$tested_group)
         ext <- if (input$download_format == "Excel") "xlsx" else "csv"
         paste0(base_name, "_", Sys.Date(), ".", ext)
       },
@@ -394,80 +455,15 @@ dmrs_server <- function(id, filtered_rgset_reactive, tx_gr_filtered_static,proje
       }
     )
     
+    #------------------------------------
+    # The server returns the final table and pheno data, ref_group and tested_group for the main app
     return(list(
       dmr_table = dmr_result,
-      pheno = pheno_result
-    )
-    )
+      pheno = pd_reactive,
+      ref_group = reactive({ input$ref_group }),
+      #tested_group <- reactive({ input$tested_group }) # this is the column name of the designmatrix (coef)-> no need in dmp finder
+    ))
   })
 }
 
-
-'# test module
-# libraries especially for this module
-library(DT)        # For interactive data tables
-library(openxlsx)
-library(GenomicRanges)
-library(shiny) # Add shiny explicitly here for module to be self-contained in its library requirements
-library(minfi) # Add minfi explicitly here
-library(bslib) # Add bslib explicitly here
-library(EnsDb.Hsapiens.v86)
-library(shinyjs)
-
-
-## load input data
-filtered_rgset <- readRDS("../intermediate_data/filtered_GRset_SWAN_SNPsremoved_SexChrProbes_kept_20250608.rds")
-
-# Load custom utility functions for DMR processing
-# In a module, you might consider if these utils should always loaded by the main app. For now, well keep the source here.
-# Adjust path for sourcing relative to the module file itself
-source("../utils/dmrs_utils.R")
-
-## creating the gene granges for the input
-library(EnsDb.Hsapiens.v86)
-edb <- EnsDb.Hsapiens.v86
-options(ucscChromosomeNames = TRUE)
-#To extract specific data, such as transcript or gene information, from an EnsDb object, you can use functions like transcripts(), genes(), and exons().
-######################### Get gene ranges
-tx_gr <- genes(edb)
-#length(tx_gr) # 63970
-head(tx_gr)
-# Filter to standard chromosomes only????
-tx_gr_filtered <- keepSeqlevels(tx_gr, standardChromosomes(tx_gr), pruning.mode = "coarse")
-#length(tx_gr_filtered) #58650
-#tx_gr_filtered
-seqlevelsStyle(tx_gr_filtered) <- "UCSC"
-#tx_gr_filtered
-
-# Check if the directory exists
-dir_path <- "../main_app_tests/epic-test"
-
-if (dir.exists(dir_path)) {
-  print(paste("The directory exists:", dir_path))
-} else {
-  print(paste("The directory does not exist:", dir_path))
-}
-
-
-# UI
-ui <- page_navbar(
-  title = "EPIC Array Pipeline",
-  theme = bs_theme(version = 5, bootswatch = "flatly"),
-  
-  nav_panel("DMR identification",
-            dmrs_ui("dmrs")
-  )
-)
-# Server
-server <- function(input, output, session) {
-  # Wrap your object as a reactive expression
-  filtered_rgset_reactive <- reactive({ filtered_rgset })
-  
-  # Call the module
-  annotated_table <- dmrs_server("dmrs", 
-                                 filtered_rgset_reactive,
-                                 tx_gr_filtered,
-                                 project_output_dir = reactive({dir_path}))
-}
-shinyApp(ui, server)
-'
+# test module in module/test_dmrs.R

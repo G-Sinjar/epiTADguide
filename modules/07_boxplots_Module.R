@@ -41,74 +41,62 @@ boxplotServer <- function(id, dmr_output_reactive, annotation_output_reactive) {
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
     
-    dmr_data_container <- reactive({
-      req(dmr_output_reactive())
-      dmr_output_reactive() 
-    })
-    
-    annotation_data_container <- reactive({
-      req(annotation_output_reactive())
-      annotation_output_reactive() 
-    })
-    
-    
-    dmrs_table_r <- reactive({
-      req(dmr_data_container())
-      dmr_data_container()$dmr_table() 
+    # --- Access reactive values ---
+    dmr_table_r <- reactive({
+      req(dmr_output_reactive()$dmr_table())
+      dmr_output_reactive()$dmr_table()
     })
     
     pheno_data_r <- reactive({
-      req(dmr_data_container())
-      dmr_data_container()$pheno() 
+      req(dmr_output_reactive()$pheno())
+      dmr_output_reactive()$pheno()
+    })
+    
+    ref_group_r <- reactive({
+      req(dmr_output_reactive()$ref_group())
+      dmr_output_reactive()$ref_group()
     })
     
     annotated_with_betas_df_r <- reactive({
-      req(annotation_data_container())
-      annotation_data_container()$annotated_table()
+      req(annotation_output_reactive())
+      annotation_output_reactive()$annotated_table()
     })
-
+    
+    #---------------------------------------------
+    # update choices names with chr and gene if available
     observe({
-      req(dmrs_table_r()) # Ensure dmrs_table_r() (the reactive value of the DMRs table) is available
-      
-      # Get the DMRs data frame
-      dmr_data <- dmrs_table_r()
-      
-      # Create a named vector for choices with a conditional check for NA
-      # Use ifelse to check for NA in 'first_overlapped_gene'
+      req(dmr_table_r())
+      dmr_data <- dmr_table_r()
       display_names <- ifelse(
         is.na(dmr_data$first_overlapped_gene),
-        # If the gene is NA, don't include the gene name in the label
         paste0(dmr_data$DMR_ID, " (", dmr_data$chr, ")"),
-        # Otherwise, include the gene name as usual
         paste0(dmr_data$DMR_ID, " (", dmr_data$chr, "_", dmr_data$first_overlapped_gene, ")")
       )
-      
       choices_list <- setNames(dmr_data$DMR_ID, display_names)
-      
       updateSelectInput(session, "dmr", choices = choices_list)
     })
     
+    #----------------------------------
     status <- reactiveVal("ℹ️ Waiting to select a DMR ID.")
     output$boxplot_status <- renderText({ status() })
     
+    #---------------------------------------
     observeEvent(input$create_plot, {
-      # All req() calls here are correct as they are already calling the final reactives
-      req(input$dmr, dmrs_table_r(), annotated_with_betas_df_r(), pheno_data_r())
+      req(input$dmr, dmr_table_r(), annotated_with_betas_df_r(), pheno_data_r())
       
       DMRx <- input$dmr
       interactive_flag <- input$interactive
       use_spacing <- input$pos_spacing
+      ref_group <- ref_group_r()
       
-      # Start progress tracking
       withProgress(message = 'Creating boxplot', value = 0, {
-        # Step 1: Extracting CpGs
+        # Step 1: Extracting CpGs in the DMR
         incProgress(0.1, detail = "Extracting CpGs in the DMR...")
         status_lines <- c("🔁 Step 1: Extracting CpGs in the DMR...")
         
         region_cpgs <- tryCatch(
           {
-            # Pass the values (actual data frames) to the utility function
-            extract_cpgs_in_DMR(DMRx, dmrs_table_r(), annotated_with_betas_df_r(), pheno_data_r())
+            extract_cpgs_in_DMR(DMRx, dmr_table_r(), annotated_with_betas_df_r(), pheno_data_r())
           },
           error = function(e) {
             status_lines <<- c(status_lines, paste0("❌ Error in Step 1: ", e$message))
@@ -163,7 +151,7 @@ boxplotServer <- function(id, dmr_output_reactive, annotation_output_reactive) {
         
         plot_result <- tryCatch(
           {
-            create_boxplot(long_table, interactive = interactive_flag, use_positional_spacing = use_spacing)
+            create_boxplot(long_table, interactive = interactive_flag, use_positional_spacing = use_spacing, ref_group = ref_group)
           },
           error = function(e) {
             status_lines <<- c(status_lines, paste0("❌ Error in Step 3: ", e$message))
@@ -223,7 +211,7 @@ boxplotServer <- function(id, dmr_output_reactive, annotation_output_reactive) {
 }
 
 
-#test app
+'#test app
 # Load libraries
 library(shiny)
 library(bslib)
@@ -239,31 +227,17 @@ results_dmr <- readRDS("../main_app_tests/epic-test/DMR_results/DMRs_cutoff_-0.1
 results_anno <- readRDS("./intermediate_data/annotated_object_20250623.rds")
 
 # Wrap each element in reactiveVal(), and return a list of reactive functions
-dmr_data <- reactive({
-  list(
-    dmr_table = reactiveVal(results_dmr$dmr_table),
-    pheno = reactiveVal(results_dmr$pheno)
-  )
-})
-
-anno_data <- reactive({
-  list(
-    annotated_table = reactiveVal(results_anno$annotated_table)
-  )
-})
-
-# Create wrapper reactivity so that inside the module,
-# we can do dmr_output_reactive()$dmr_table()
 dmr_output_reactive <- reactive({
   list(
-    dmr_table = dmr_data()$dmr_table,
-    pheno = dmr_data()$pheno
+    dmr_table = reactiveVal(results_dmr$dmr_table),
+    pheno = reactiveVal(results_dmr$pheno),
+    ref_group = reactiveVal("unguided")
   )
 })
 
 annotation_output_reactive <- reactive({
   list(
-    annotated_table = anno_data()$annotated_table
+    annotated_table = reactiveVal(results_anno$annotated_table)
   )
 })
 
@@ -283,4 +257,4 @@ server <- function(input, output, session) {
   )
 }
 
-shinyApp(ui = ui, server = server)
+shinyApp(ui = ui, server = server)'

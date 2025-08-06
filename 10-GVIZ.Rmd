@@ -281,7 +281,10 @@ betaTrack <- DataTrack(gr_cpgs, chromosome = chr, genome = genome,
                     name = "Beta values",
                     data = beta_values)
  
-#plotTracks(betaTrack, groups = rep(c("unguided", "guided"), each = 4),type = c("a", "p"), from = from , to = to) # or with aggregate aggregateGroups = TRUE, aggregation = "mean"
+#plotTracks(betaTrack, groups = rep(c("unguided", "guided"), each = 4),type = c("a", "p"), from = from , to = to) 
+# or with aggregate aggregateGroups = TRUE, aggregation = "mean"
+rep(c("unguided", "guided"), each = 4) -> c("unguided", "unguided", "unguided", "unguided", "guided", "guided", "guided", "guided")
+rep(c("unguided", "guided"), times = 4) -> c("unguided", "guided", "unguided", "guided", "unguided", "guided", "unguided", "guided")
 ```
 
 
@@ -519,7 +522,7 @@ plotGvizTracks <- function(from, to){
     plotTracks(list(itrack, gtrack,sondentrack,cpgIslandTrack, DmrTrack, offtargetTrack,betaTrack,geneTrack,SUBTadTrack,TadTrack),#ensTransTrack #
     from = from, to = to,
     showBandId = TRUE, cex.bands = 0.7,
-    groups = rep(c("unguided", "guided"), each = 4),type = c("a", "p"),
+    groups = rep(c("unguided", "guided"), each = 4),type = c("a", "p"), #for beta track
     transcriptAnnotation = "transcript",
     cex.group = 0.9,
     cex.legend = 0.9,

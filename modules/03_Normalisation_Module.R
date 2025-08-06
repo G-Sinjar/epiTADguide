@@ -198,7 +198,7 @@ norm_server <- function(id, RGset, raw_normalised, targets, project_output_dir) 
       }
     }, ignoreNULL = TRUE, ignoreInit = FALSE, once = TRUE)
     
-    
+    #------------------------
     # --- Dynamic UI for Normalisation Plot Display ---
     output$beta_plot_container <- renderUI({
       ns <- session$ns
@@ -239,15 +239,15 @@ norm_server <- function(id, RGset, raw_normalised, targets, project_output_dir) 
         fluidRow(column(2), column(8, plotOutput(ns(plot_output_id))), column(2))
       )
     })
-    
+    #---------------------------------------------------------
     # --- Density Plots (each wrapped in withProgress) ---
     output$Raw <- renderPlot({
       req(raw_normalised(), targets())
       withProgress(message = 'Generating Raw Data Density Plot...', value = 0, {
         incProgress(0.5, detail = "Plotting raw data")
-        densityPlot(raw_normalised(), sampGroups = targets()$Sample_Label,
+        densityPlot(raw_normalised(), sampGroups = targets()$Sample_Group,
                     #main = "Beta Values distribution of raw data",
-                    pal = rainbow(length(unique(targets()$Sample_Label))))
+                    pal = rainbow(length(unique(targets()$Sample_Group))))
         incProgress(1, detail = "Plot ready")
       })
     })
@@ -256,9 +256,9 @@ norm_server <- function(id, RGset, raw_normalised, targets, project_output_dir) 
       req(input$norm_methode == "Swan", SWAN_normalised_res(), targets()) 
       withProgress(message = 'Generating SWAN Density Plot...', value = 0, {
         incProgress(0.5, detail = "Plotting SWAN normalized data")
-        densityPlot(SWAN_normalised_res(), sampGroups = targets()$Sample_Label,
+        densityPlot(SWAN_normalised_res(), sampGroups = targets()$Sample_Group,
                     #main = "Beta values distribution after SWAN",
-                    pal = rainbow(length(unique(targets()$Sample_Label))))
+                    pal = rainbow(length(unique(targets()$Sample_Group))))
         incProgress(1, detail = "Plot ready")
       })
     })
@@ -267,9 +267,9 @@ norm_server <- function(id, RGset, raw_normalised, targets, project_output_dir) 
       req(input$norm_methode == "Noob", noob_normalised_res(), targets()) 
       withProgress(message = 'Generating Noob Density Plot...', value = 0, {
         incProgress(0.5, detail = "Plotting Noob normalized data")
-        densityPlot(noob_normalised_res(), sampGroups = targets()$Sample_Label,
+        densityPlot(noob_normalised_res(), sampGroups = targets()$Sample_Group,
                     #main = "Beta values distribution after Noob",
-                    pal = rainbow(length(unique(targets()$Sample_Label))))
+                    pal = rainbow(length(unique(targets()$Sample_Group))))
         incProgress(1, detail = "Plot ready")
       })
     })
@@ -278,9 +278,9 @@ norm_server <- function(id, RGset, raw_normalised, targets, project_output_dir) 
       req(input$norm_methode == "Noob.Swan", noob_swan_normalised_res(), targets()) 
       withProgress(message = 'Generating Noob.Swan Density Plot...', value = 0, {
         incProgress(0.5, detail = "Plotting Noob.Swan normalized data")
-        densityPlot(noob_swan_normalised_res(), sampGroups = targets()$Sample_Label,
+        densityPlot(noob_swan_normalised_res(), sampGroups = targets()$Sample_Group,
                     #main = "Beta values distribution after Noob-SWAN",
-                    pal = rainbow(length(unique(targets()$Sample_Label))))
+                    pal = rainbow(length(unique(targets()$Sample_Group))))
         incProgress(1, detail = "Plot ready")
       })
     })
@@ -289,9 +289,9 @@ norm_server <- function(id, RGset, raw_normalised, targets, project_output_dir) 
       req(input$norm_methode == "Funnorm", funnorm_normalised_res(), targets()) 
       withProgress(message = 'Generating Funnorm Density Plot...', value = 0, {
         incProgress(0.5, detail = "Plotting Funnorm normalized data")
-        densityPlot(getBeta(funnorm_normalised_res()), sampGroups = targets()$Sample_Label,
+        densityPlot(getBeta(funnorm_normalised_res()), sampGroups = targets()$Sample_Group,
                     #main = "Beta values distribution after Funnorm",
-                    pal = rainbow(length(unique(targets()$Sample_Label))))
+                    pal = rainbow(length(unique(targets()$Sample_Group))))
         incProgress(1, detail = "Plot ready")
       })
     })
@@ -300,9 +300,9 @@ norm_server <- function(id, RGset, raw_normalised, targets, project_output_dir) 
       req(input$norm_methode == "Quantile", Quantile_normalised_res(), targets()) 
       withProgress(message = 'Generating Quantile Density Plot...', value = 0, {
         incProgress(0.5, detail = "Plotting Quantile normalized data")
-        densityPlot(getBeta(Quantile_normalised_res()), sampGroups = targets()$Sample_Label,
+        densityPlot(getBeta(Quantile_normalised_res()), sampGroups = targets()$Sample_Group,
                     #main = "Beta values distribution after Quantile",
-                    pal = rainbow(length(unique(targets()$Sample_Label))))
+                    pal = rainbow(length(unique(targets()$Sample_Group))))
         incProgress(1, detail = "Plot ready")
       })
     })
@@ -323,33 +323,33 @@ norm_server <- function(id, RGset, raw_normalised, targets, project_output_dir) 
         switch(input$norm_methode,
                "Swan" = {
                  req(SWAN_normalised_res(), targets())
-                 densityPlot(SWAN_normalised_res(), sampGroups = targets()$Sample_Label,
+                 densityPlot(SWAN_normalised_res(), sampGroups = targets()$Sample_Group,
                              main = "Beta values distribution after SWAN",
-                             pal = rainbow(length(unique(targets()$Sample_Label))))
+                             pal = rainbow(length(unique(targets()$Sample_Group))))
                },
                "Noob" = {
                  req(noob_normalised_res(), targets())
-                 densityPlot(noob_normalised_res(), sampGroups = targets()$Sample_Label,
+                 densityPlot(noob_normalised_res(), sampGroups = targets()$Sample_Group,
                              main = "Beta values distribution after Noob",
-                             pal = rainbow(length(unique(targets()$Sample_Label))))
+                             pal = rainbow(length(unique(targets()$Sample_Group))))
                },
                "Noob.Swan" = {
                  req(noob_swan_normalised_res(), targets())
-                 densityPlot(noob_swan_normalised_res(), sampGroups = targets()$Sample_Label,
+                 densityPlot(noob_swan_normalised_res(), sampGroups = targets()$Sample_Group,
                              main = "Beta values distribution after Noob-SWAN",
-                             pal = rainbow(length(unique(targets()$Sample_Label))))
+                             pal = rainbow(length(unique(targets()$Sample_Group))))
                },
                "Funnorm" = {
                  req(funnorm_normalised_res(), targets())
-                 densityPlot(getBeta(funnorm_normalised_res()), sampGroups = targets()$Sample_Label,
+                 densityPlot(getBeta(funnorm_normalised_res()), sampGroups = targets()$Sample_Group,
                              main = "Beta values distribution after Funnorm",
-                             pal = rainbow(length(unique(targets()$Sample_Label))))
+                             pal = rainbow(length(unique(targets()$Sample_Group))))
                },
                "Quantile" = {
                  req(Quantile_normalised_res(), targets())
-                 densityPlot(getBeta(Quantile_normalised_res()), sampGroups = targets()$Sample_Label,
+                 densityPlot(getBeta(Quantile_normalised_res()), sampGroups = targets()$Sample_Group,
                              main = "Beta values distribution after Quantile",
-                             pal = rainbow(length(unique(targets()$Sample_Label))))
+                             pal = rainbow(length(unique(targets()$Sample_Group))))
                }
         )
         
@@ -368,8 +368,8 @@ norm_server <- function(id, RGset, raw_normalised, targets, project_output_dir) 
   })
 }
 
-
-'# 1) Libraries
+'
+# 1) Libraries
 library(shiny)  
 library(bslib)  
 library(minfi)  

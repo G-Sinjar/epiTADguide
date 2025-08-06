@@ -31,8 +31,8 @@ create_gr_dmrs <- function(DMR_table) {
   gr
 }
 # test function
-dmr_list <- readRDS("C:/Users/ghaza/Documents/ghazal/Bioinformatik_Fächer/Masterarbeit_Project/Scripts/R_Scripts/intermediate_data/DMRs_cutoff_neg0.15_to_0.15_B0_2025-06-24.rds")
-dmrs_gr <- create_gr_dmrs(dmr_list$dmr_table)
+#dmr_list <- readRDS("../modules/main_app_tests/epic-test/DMR_results/DMRs_cutoff_-0.15_0.15_B1_20250801.rds")
+#dmrs_gr <- create_gr_dmrs(dmr_list$dmr_table)
 
 #--------------------------------------------------------------------------------------------------------------
 # function 2: create granges of annotation table
@@ -88,16 +88,17 @@ create_gr_TADs_SUBTADs <- function(chr, SUBTADs) {
   return(gr)
 }
 
+#setwd("C:/Users/ghaza/Documents/ghazal/Bioinformatik_Fächer/Masterarbeit_Project/Scripts/R_Scripts/utils")
 #test funcgion
-#library(readr)
-#chromosome_name <- "chr13"
-#subtad_file_dir <- "C:/Users/ghaza/Documents/ghazal/Bioinformatik_Fächer/Masterarbeit_Project/Scripts/PythonProject/TADs_CAKI2/3_TADs_as_txt_and_Excel/CAKI2_chr13_25kb_TADs.txt"
-#SUBTADs <- read_delim(subtad_file_dir, delim = "\t", show_col_types = FALSE)
-#gr_SUBTADs <- create_gr_SUBTADs(chromosome_name, SUBTADs)
+'library(readr)
+chromosome_name <- "chr13"
+subtad_file_dir <- "../main_app_tests/epic-test/TADcaller_results/4DNFIIH3SM5N/TADcaller_Results/TADs_CAKI2/processed_tads/CAKI2_chr13_25kb_SubTADs.txt"
+SUBTADs <- read_delim(subtad_file_dir, delim = "\t", show_col_types = FALSE)
+gr_SUBTADs <- create_gr_TADs_SUBTADs(chromosome_name, SUBTADs)
 
-#tad_file_dir <- "C:/Users/ghaza/Documents/ghazal/Bioinformatik_Fächer/Masterarbeit_Project/Scripts/PythonProject/TADs_CAKI2/3_TADs_as_txt_and_Excel/CAKI2_chr13_25kb_SubTADs.txt"
-#tads <- read_delim(tad_file_dir, delim = "\t", show_col_types = FALSE)
-#gr_tads <- create_gr_SUBTADs(chromosome_name, tads)
+tad_file_dir <- "../main_app_tests/epic-test/TADcaller_results/4DNFIIH3SM5N/TADcaller_Results/TADs_CAKI2/processed_tads/CAKI2_chr13_25kb_TADs.txt"
+tads <- read_delim(tad_file_dir, delim = "\t", show_col_types = FALSE)
+gr_tads <- create_gr_TADs_SUBTADs(chromosome_name, tads)'
 #----------------------------------------------------------------------------------------
 # function 5: create granges of cpgIslands
 loadCpGIslands_gr <- function(destfile = "cpgIslandExt_hg38.txt.gz") {
@@ -258,8 +259,6 @@ create_tracks <- function(genome, chr,
 }
 
 ################## test function
-
-# -----------------
 '# gene granges which is global
 library(EnsDb.Hsapiens.v86)
 edb <- EnsDb.Hsapiens.v86
@@ -278,18 +277,31 @@ seqlevelsStyle(tx_gr_filtered_global) <- "UCSC"'
                         gr_TADs = gr_tads,
                         binsize = 25,
                         num_samples = 8,
-                        tissue = "CAKI2")'
-
-
-
-
-
+                        tissue = "CAKI2")
+'
 #---------------------------------------------------------------------------------------------------
 # plotGvizTracks function
 
 # then here plot the available tracks
-plotGvizTracks <- function(tracks, from, to) {
-  # Extract tracks from named list, or NULL if not present
+plotGvizTracks <- function(tracks, from, to, pheno = NULL, gr_cpgs = NULL, ref_group = NULL) {
+  
+  
+  # Input validation
+  if (!is.null(ref_group)) {
+    stopifnot(is.character(ref_group) || is.factor(ref_group))
+    ref_group <- as.character(ref_group)  # Convert to character if factor
+  }
+  
+  # Extract and validate tracks
+  'gtrack <- if (!is.null(tracks$gtrack)) {
+    if (length(tracks$gtrack) == 0) {
+      message("Replacing empty GenomeAxisTrack with new one")
+      GenomeAxisTrack(range = IRanges(start = from, end = to))
+    } else {
+      tracks$gtrack
+    }
+  }'
+  # Extract tracks from named list
   itrack <- tracks$itrack
   gtrack <- tracks$gtrack
   cpgsTrack <- tracks$cpgsTrack
@@ -301,41 +313,119 @@ plotGvizTracks <- function(tracks, from, to) {
   SUBTadTrack <- tracks$SUBTadTrack
   TadTrack <- tracks$TadTrack
   
-  # Apply display parameters safely if tracks exist
-  if (!is.null(DmrTrack)) displayPars(DmrTrack) <- list(groupAnnotation = "feature")
-  if (!is.null(cpgIslandTrack)) displayPars(cpgIslandTrack) <- list(groupAnnotation = "feature")
+  # Set display parameters for all tracks
+  # Set default colors for non-data tracks
+  if (!is.null(itrack)) displayPars(itrack) <- list(col = "black", fontcolor = "black")
+  if (!is.null(gtrack)) displayPars(gtrack) <- list(col = "black", fontcolor = "black")
   if (!is.null(cpgsTrack)) displayPars(cpgsTrack) <- list(stacking = "dense", showFeatureId = FALSE)
-  if (!is.null(geneTrack)) displayPars(geneTrack) <- list(featureAnnotation = "id", fontcolor.feature = "black", stacking = "full", cex = 0.7)
+  if (!is.null(cpgIslandTrack)) displayPars(cpgIslandTrack) <- list( groupAnnotation = "feature")
+  if (!is.null(DmrTrack)) displayPars(DmrTrack) <- list(groupAnnotation = "feature")
   if (!is.null(offtargetTrack)) displayPars(offtargetTrack) <- list(groupAnnotation = "feature", fontcolor.group = "black")
-  #if (!is.null(SUBTadTrack)) displayPars(cpgsTrack) <- list(stacking = "dense", showFeatureId = FALSE) # and add thicker borders of boxes if stacked
-  #if (!is.null(TadTrack)) displayPars(cpgsTrack) <- list(stacking = "dense", showFeatureId = FALSE)
+  if (!is.null(geneTrack)) displayPars(geneTrack) <- list(col = "black", fontcolor = "black", featureAnnotation = "id", fontcolor.feature = "black", stacking = "full", cex = 0.7)
   
+  # Initialize group labels and colors
+  group_labels <- NULL
+  group_colors <- NULL
   
+  # New logic: extract beta sample column names from gr_cpgs metadata
+  if (!is.null(pheno) && !is.null(gr_cpgs)) {
+    if (!"Sample_Group" %in% colnames(pheno)) {
+      warning("Column 'Sample_Group' not found in pheno.")
+    } else {
+      number_samples <- length(pheno$Sample_Group)
+      mcols_names <- colnames(mcols(gr_cpgs))
+      
+      if (length(mcols_names) < number_samples) {
+        warning("Not enough columns in gr_cpgs to match number of samples.")
+      } else {
+        beta_colnames <- tail(mcols_names, number_samples)
+        
+        # Debugging step 1: Verify pheno order matches gr_cpgs columns
+        tryCatch({
+          stopifnot(identical(beta_colnames, rownames(pheno)))
+          message("✅ Sample order verification passed: gr_cpgs columns match pheno rownames")
+        }, error = function(e) {
+          warning("Sample order mismatch between gr_cpgs and pheno")
+          print(data.frame(gr_cpgs_columns = beta_colnames, pheno_rows = rownames(pheno)))
+        })
+        
+        group_labels <- pheno$Sample_Group[match(beta_colnames, rownames(pheno))]
+        
+        # Ensure Sample_Group is factor with correct levels
+        if (!is.factor(group_labels)) {
+          group_labels <- factor(group_labels)
+        }
+        
+        unique_groups <- levels(group_labels)  # Get ordered factor levels
+        
+        # Debugging step 2: Check group order
+        message("Group levels: ", paste(unique_groups, collapse = ", "))
+        
+        '# --- Robust color assignment ---
+        if (length(unique_groups) == 2) {
+          group_colors <- setNames(rep("", length(unique_groups)), unique_groups)
+          
+          if (!is.null(ref_group) && ref_group %in% unique_groups) {
+            group_colors[as.character(ref_group)] <- "blue"
+            group_colors[setdiff(unique_groups, ref_group)] <- "orange"
+          } else {
+            warning("Reference group not found or not provided. Using default blue/orange.")
+            group_colors[] <- c("blue", "orange")[seq_along(unique_groups)]
+          }
+        } else if (length(unique_groups) > 2) {
+          group_colors <- setNames(rainbow(length(unique_groups)), unique_groups)
+        } else if (length(unique_groups) == 1) {
+          group_colors <- setNames("darkblue", unique_groups)
+        }
+        
+        # Debugging step 3: Verify color assignment
+        message("Color assignment:")
+        print(data.frame(Group = names(group_colors), Color = group_colors))'
+      }
+    }
+  }
   
-  # Prepare list of tracks to plot (exclude NULLs)
+  # Prepare tracks to plot
   to_plot <- Filter(Negate(is.null), list(
     itrack, gtrack, cpgsTrack, cpgIslandTrack, DmrTrack,
     offtargetTrack, betaTrack, geneTrack, SUBTadTrack, TadTrack
   ))
+  # Verify we have at least one valid track
+  if (length(to_plot) == 0) {
+    stop("No valid tracks to plot")
+  }
   
-  # Plot tracks with given genomic range
-  plotTracks(
-    to_plot,
-    from = from, to = to,
-    showBandId = TRUE, cex.bands = 0.7,
-    groups = rep(c("unguided", "guided"), each = 4),
-    type = c("a", "p"),
-    transcriptAnnotation = "transcript",
-    cex.group = 0.9,
-    cex.legend = 0.9,
-    cex.title = 0.75,
-    col.title = "black"
-  )
+  # Debug output
+  message("Plot range: ", from, "-", to)
+
+  tryCatch({
+    plotTracks(
+      to_plot,
+      from = from, to = to,
+      showBandId = TRUE, 
+      cex.bands = 0.7,
+      groups = group_labels, 
+      #col = group_colors,
+      type = c("a", "p"),
+      transcriptAnnotation = "transcript",
+      cex.group = 0.9,
+      cex.legend = 0.9,
+      cex.title = 0.75,
+      col.title = "black"
+      )
+  }, error = function(e) {
+    message("Plotting failed with error: ", e$message)
+    message("Track details:")
+    print(summary(to_plot))
+    stop(e)
+  })
 }
 
 
-# test function
-#plotGvizTracks(tracks = tracks, from = 95551415, to = 95554041)
+#pheno <- dmr_list$pheno
+#cpgs_gr
+## test function
+#plotGvizTracks(tracks = tracks, from = 95500000, to = 95550000, pheno = pheno, gr_cpgs=cpgs_gr, ref_group= "unguided")
 #----------------------------------------------------------------------------------------
 
 #' Find Chromosomes with TAD and SubTAD Tables in a Given Path and Check for a Specific Chromosome

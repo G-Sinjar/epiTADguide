@@ -9,7 +9,6 @@
 # ─────────────────────────────────────
 # User Interface (UI) FUNCTION
 # ─────────────────────────────────────
-
 loadDataUI <- function(id) {
   ns <- NS(id)
   
@@ -23,10 +22,6 @@ loadDataUI <- function(id) {
         value = "",
         placeholder = "E.g. My_EPIC_Study"
       ),
-      #helpText("This name will be used to create a subfolder for all project outputs."),
-      #hr(),
-      
-      # Project Output Base Folder Input (now for the *base* directory)
       textInput(
         inputId = ns("project_manual_path"),
         label = "Enter Base Folder Path for Outputs:",
@@ -51,20 +46,18 @@ loadDataUI <- function(id) {
       # Card showing the array infos details
       card(
         card_header("Array information"),
-        verbatimTextOutput(ns("arry_info")) 
+        uiOutput(ns("arry_info_ui")) # Changed to uiOutput to allow for conditional display of a table
       )
     )
   )
 }
 
-
 # ─────────────────────────────────────
 # SERVER FUNCTION
 # ─────────────────────────────────────
-
 loadDataServer <- function(id) {
   moduleServer(id, function(input, output, session) {
-    ns <- session$ns # <--- Keep this line
+    ns <- session$ns 
     
     # Reactive string to store and update the step-by-step status messages
     status_log <- reactiveVal("Waiting for user to set project name and output path...")
@@ -79,14 +72,16 @@ loadDataServer <- function(id) {
     # Render status text in UI
     output$status <- renderText({ status_log() })
     
+    #-----------------------------------------------
     # Reactive values for results
     RGset <- reactiveVal(NULL)
     raw_normalised <- reactiveVal(NULL)
     targets <- reactiveVal(NULL)
     
     # Reactive value for the FINAL project output directory (base + project_name)
-    project_output_dir <- reactiveVal(NULL) # NULL initially, only set on successful check
+    project_output_dir <- reactiveVal(NULL)
     
+    #--------------------------------------------------------
     # Reactive value to control visibility of other sidebar elements
     raw_data_input_visible <- reactiveVal(FALSE)
     
@@ -95,19 +90,13 @@ loadDataServer <- function(id) {
       if (raw_data_input_visible()) {
         tagList(
           strong("2. Choose the path to raw data from sequencer"),
-          
-          # Text box input for directory path from user
           textInput(
             inputId = ns("manual_path"), 
             label = "Enter folder path manually:",
             value = "",
             placeholder = "E.g. C:\\Users\\yourname\\Documents\\sequencer_output"
           ),
-          
-          # Button to trigger loading of data
           actionButton(ns("load_btn"), "Load Data"),
-          
-          # Help text with folder requirements
           helpText(
             "Please select a folder that includes: (1) a CSV file with slide and sample information, ",
             "and (2) a subfolder named after the slide, which contains the green and red IDAT files."
@@ -116,10 +105,8 @@ loadDataServer <- function(id) {
       }
     })
     
-    
     # Observe "Check and Set Path" button for project output directory
     observeEvent(input$check_set_project_path_btn, {
-      # Check for null fields and show error message
       if (is.null(input$project_name) || nchar(input$project_name) == 0 ||
           is.null(input$project_manual_path) || nchar(input$project_manual_path) == 0) {
         showNotification(
@@ -127,14 +114,13 @@ loadDataServer <- function(id) {
           type = "error",
           duration = 5
         )
-        return() # Stop the execution of the observeEvent
+        return()
       }
       
       base_path <- gsub("\\\\", "/", input$project_manual_path)
-      project_name <- make.names(input$project_name) # Sanitize project name for folder
-      project_name <- gsub("\\.", "_", project_name) # Replace dots with underscores (make.names uses dots)
-      project_name <- gsub(" ", "_", project_name) # Replace spaces with underscores
-      # Replace backslashes and forward slashes with underscores
+      project_name <- make.names(input$project_name)
+      project_name <- gsub("\\.", "_", project_name)
+      project_name <- gsub(" ", "_", project_name)
       project_name <- gsub("[\\\\/]", "_", project_name)
       
       if (nchar(project_name) == 0) {
@@ -145,11 +131,8 @@ loadDataServer <- function(id) {
       }
       
       status_log(paste0("Checking and setting project output path for '", project_name, "'..."))
-      raw_data_input_visible(FALSE) # Hide raw data input until path is valid
+      raw_data_input_visible(FALSE)
       
-      # --- START MODIFIED LOGIC ---
-      
-      # 1. Check if the BASE PATH exists first
       if (!dir.exists(base_path)) {
         append_status(paste0("❌ Error: The specified Base Folder Path for Outputs does not exist: ", base_path))
         showNotification(
@@ -159,22 +142,20 @@ loadDataServer <- function(id) {
         )
         project_output_dir(NULL)
         raw_data_input_visible(FALSE)
-        return() # Stop execution
+        return()
       } else {
         append_status(paste0("✅ Base Folder Path exists: ", base_path))
       }
       
-      # 2. Construct the full, final project output path (base + project_name)
       final_project_path <- file.path(base_path, project_name)
       
-      # 3. Now, handle the project-specific subfolder
       if (!dir.exists(final_project_path)) {
         tryCatch({
-          dir.create(final_project_path, recursive = TRUE, showWarnings = TRUE) # recursive=TRUE is still good practice
+          dir.create(final_project_path, recursive = TRUE, showWarnings = TRUE)
           append_status("✅ Successfully created project directory")
           project_output_dir(final_project_path)
           append_status(paste0("✅ Project output path set successfully.", final_project_path))
-          raw_data_input_visible(TRUE) # Show raw data input now
+          raw_data_input_visible(TRUE)
         }, error = function(e) {
           append_status(paste("❌ Error creating project directory:", e$message))
           showNotification(
@@ -193,28 +174,26 @@ loadDataServer <- function(id) {
           )
           project_output_dir(final_project_path)
           append_status("✅ Project output path set successfully (with warning).")
-          raw_data_input_visible(TRUE) # Show raw data input now
+          raw_data_input_visible(TRUE)
         })
       } else {
         append_status(paste0("✅ Project directory already exists: ", final_project_path))
         project_output_dir(final_project_path)
         append_status("✅ Project output path set successfully.\nNow please enter the path to your raw data from sequencer in the side bar bellow.")
-        raw_data_input_visible(TRUE) # Show raw data input now
+        raw_data_input_visible(TRUE)
       }
-      # --- END MODIFIED LOGIC ---
     })
-    
     
     # Observe when "Load Data" button is clicked (for raw data)
     observeEvent(input$load_btn, {
       
-      # Reset reactive values to NULL on each new load attempt
       RGset(NULL)
       raw_normalised(NULL)
       targets(NULL)
       
-      status_log(paste0("Step 1: validating Project output path: ", project_output_dir()))
-      # Require both paths to be set
+      # Reset and start new status log
+      status_log(paste0("Step 1: Validating raw data path: ", input$manual_path, "..."))
+      
       req(input$manual_path, project_output_dir())
       
       RawDataDir <- gsub("\\\\", "/", input$manual_path)
@@ -224,7 +203,7 @@ loadDataServer <- function(id) {
         # Step 1: Validate Raw Data Path
         if (!dir.exists(RawDataDir)) {
           append_status(paste0("❌ Path does not exist: ", RawDataDir))
-          incProgress(amount = 0, detail = "Path error") # Indicate immediate failure, no progress
+          incProgress(amount = 0, detail = "Path error")
           showNotification(
             paste0("Error: The raw data path '", RawDataDir, "' does not exist. Please enter a valid path."),
             type = "error",
@@ -232,18 +211,16 @@ loadDataServer <- function(id) {
           )
           return()
         }
-        append_status("✅ Step 1: completed.")
-        #incProgress(1/6, detail = "Path validated") # Progress: 1/6
-        
+        append_status("✅ Step 1: completed. ")
         
         # Step 2: Reading Sample Sheet
         append_status("Step 2: Reading Sample Sheet...")
-        incProgress(1/6, detail = "Reading Sample Sheet") # Progress: 2/6
+        incProgress(1/6, detail = "Reading Sample Sheet")
         targets_val <- tryCatch({
           read.metharray.sheet(RawDataDir)
         }, error = function(e) {
           append_status(paste("❌ Error reading Sample Sheet:", e$message))
-          incProgress(amount = 0, detail = "Sample Sheet error") # Indicate failure, no progress
+          incProgress(amount = 0, detail = "Sample Sheet error")
           showNotification(
             paste("Error reading Sample Sheet:", e$message),
             type = "error",
@@ -254,15 +231,14 @@ loadDataServer <- function(id) {
         if (is.null(targets_val)) return()
         append_status("✅ Step 2: completed.")
         
-        
         # Step 3: Reading IDAT files
         append_status("Step 3: Reading IDAT files...")
-        incProgress(1/6, detail = "Reading IDAT files") # Progress: 3/6
+        incProgress(1/6, detail = "Reading IDAT files")
         RGset_val <- tryCatch({
           read.metharray.exp(targets = targets_val)
         }, error = function(e) {
           append_status(paste("❌ Error reading IDATs:", e$message))
-          incProgress(amount = 0, detail = "IDAT error") # Indicate failure, no progress
+          incProgress(amount = 0, detail = "IDAT error")
           showNotification(
             paste("Error reading IDATs:", e$message),
             type = "error",
@@ -273,15 +249,14 @@ loadDataServer <- function(id) {
         if (is.null(RGset_val)) return()
         append_status("✅ Step 3: completed.")
         
-        
-        # Step 4: Getting Manifest
+        # Step 4: Getting Array Information
         append_status("Step 4: Getting Array Information...")
-        incProgress(1/6, detail = "Getting array infos") # Progress: 4/6
+        incProgress(1/6, detail = "Getting array infos")
         arry_info <- tryCatch({
           annotation(RGset_val)
         }, error = function(e) {
           append_status(paste("❌ Error getting array informations:", e$message))
-          incProgress(amount = 0, detail = "Array information error") 
+          incProgress(amount = 0, detail = "Array information error")
           showNotification(
             paste("Error getting array information:", e$message),
             type = "error",
@@ -290,18 +265,21 @@ loadDataServer <- function(id) {
           return(NULL)
         })
         if (is.null(arry_info)) return()
-        append_status("✅ Step 4: completed.")
-        output$arry_info <- renderPrint({ arry_info })
         
+        # Format the array information for display
+        array_type <- ifelse("array" %in% names(arry_info), arry_info["array"], "Unknown")
+        array_annotation <- ifelse("annotation" %in% names(arry_info), arry_info["annotation"], "Unknown")
+        
+        append_status(paste0("✅ Step 4: completed."))
         
         # Step 5: Converting raw signals to locus level (preprocessRaw)
         append_status("Step 5: Converting raw signals to locus level...")
-        incProgress(1/6, detail = "Preprocessing raw data") # Progress: 5/6
+        incProgress(1/6, detail = "Preprocessing raw data")
         raw_norm_val <- tryCatch({
           preprocessRaw(RGset_val)
         }, error = function(e) {
           append_status(paste("❌ Error preprocessing:", e$message))
-          incProgress(amount = 0, detail = "Preprocessing error") # Indicate failure, no progress
+          incProgress(amount = 0, detail = "Preprocessing error")
           showNotification(
             paste("Error preprocessing:", e$message),
             type = "error",
@@ -312,27 +290,50 @@ loadDataServer <- function(id) {
         if (is.null(raw_norm_val)) return()
         append_status("✅ Step 5: completed.")
         
-        
         # Step 6: Extracting sample info and CpG count
-        append_status("Step 6: Extracting sample info and CpG count...")
-        incProgress(1/6, detail = "Extracting summary info") # Progress: 6/6 (or 100%)
-        sample_names <- sampleNames(RGset_val)
-        num_samples <- length(sample_names)
+        append_status("Step 6: Extracting sample and CpG info...")
+        incProgress(1/6, detail = "Extracting summary info")
+        
+        sample_slide_array <- sampleNames(RGset_val)
+        num_samples <- length(sample_slide_array)
         num_cpgs <- nrow(raw_norm_val)
+        sample_name <- targets_val$Sample_Name
+        sample_group <- targets_val$Sample_Group
         
-        append_status(paste0(
-          "✅ Sample and CpG info retrieved:\n",
+        # Create a data frame for display in the "Array information" card
+        sample_info_df <- data.frame(
+          Slide_Array = sample_slide_array,
+          Sample_Name = sample_name,
+          Sample_Group = sample_group
+        )
+        
+        # Update output$arry_info_ui to display the table
+        output$arry_info_ui <- renderUI({
+          tagList(
+            renderTable(sample_info_df)
+          )
+        })
+        
+        # Final, combined status summary message
+        final_summary <- paste0(
+          "\n✅ All steps completed! Data is ready.\n",
+          "  - Array Type: ", array_type, "\n",
+          "  - Annotation: ", array_annotation, "\n",
           "  - Number of CpGs: ", num_cpgs, "\n",
-          "  - Number of Samples: ", num_samples, "\n",
-          "  - Sample Names:\n", paste(sample_names, collapse = "\n")
-        ))
+          "  - Number of Samples: ", num_samples,
+          "\n\n⚠️ Important Note:\n",
+          "If the sample names and sample groups aren't correct, please check your sample sheet:\n",
+          "1. Ensure sample names are in a column named exactly 'Sample_Name'\n",
+          "2. Ensure sample groups are in a column named exactly 'Sample_Group'\n",
+          "3. Avoid editing the sample sheet in Excel as it may alter the file structure\n",
+          "4. Make corrections and restart the analysis"
+        )
+        append_status(final_summary)
         
-        # Update reactive values for loaded data
         RGset(RGset_val)
         raw_normalised(raw_norm_val)
         targets(targets_val)
         
-        # Final progress update: Ensures it hits 100% and then fades.
         incProgress(0, detail = "Done!")
       }) # Closes withProgress block
       
@@ -367,5 +368,3 @@ server <- function(input, output, session) {
 }
 
 shinyApp(ui, server)'
-
-

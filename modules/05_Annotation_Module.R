@@ -13,21 +13,22 @@
 # ─────────────────────────────────────
 annotationUI <- function(id) {
   ns <- NS(id)
+  
   tagList(
-    shinyjs::useShinyjs(),  # Enable shinyjs
+    shinyjs::useShinyjs(),
     
     page_sidebar(
       sidebar = sidebar(
         width = "350px",
         actionButton(ns("run_annot"), "Run Annotation on filtered data"),
         
-        # Toggle link + collapsible notes section
-        tags$div(
+        # Toggle notes section
+        div(
           style = "margin-top: 20px;",
           actionLink(ns("toggle_notes"), "📘 Show notes for reading the table"),
-          tags$div(
-            id = ns("note_section"),  # ID for toggle
-            style = "display: none; margin-top: 10px; font-size: 0.9em;",  # initially hidden
+          div(
+            id = ns("note_section"),
+            style = "display: none; margin-top: 10px; font-size: 0.9em;",
             
             h5("Notes for reading the table:"),
             p(strong("ProbeSeqA, ProbeSeqB:"), " the sequence of the probe; B is for Infinium I beadtypes which has 2 probes instead of one."),
@@ -41,12 +42,12 @@ annotationUI <- function(id) {
             p(strong("...maf:"), " Minor Allele Frequency of the SNP in the population."),
             p(strong("Island_Name:"), " CpG Island coordinates from UCSC."),
             p(strong("Relation_to_Island:"), " CpG location relative to island:"),
-            tags$ul(
-              tags$li("Shore = 0-2 kb from island."),
-              tags$li("Shelf = 2-4 kb from island."),
-              tags$li("N = upstream (5') of island."),
-              tags$li("S = downstream (3') of island.")
-            ),
+            HTML("<ul>
+              <li>Shore = 0-2 kb from island.</li>
+              <li>Shelf = 2-4 kb from island.</li>
+              <li>N = upstream (5') of island.</li>
+              <li>S = downstream (3') of island.</li>
+            </ul>"),
             p(strong("Probe_Type:"), " Probe type: cg=CpG, nv=variant, rs=SNP, ch=Cp<nonG base>"),
             p(strong("UCSC_RefGene:"), " Gene annotations from UCSC."),
             p(strong("Gencode:"), " Gene annotations from GENCODE."),
@@ -65,7 +66,6 @@ annotationUI <- function(id) {
     )
   )
 }
-
 
 
 # ─────────────────────────────────────
@@ -91,8 +91,7 @@ annotationServer <- function(id, grset_reactive, project_output_dir) {
     #-----------------------------------------
     observeEvent(input$run_annot, {
       req(grset_reactive())
-      #req(project_output_dir())
-      
+
       current_grset <- grset_reactive()
       print(paste("Class of object passed to getAnnotation:", class(current_grset)))
       
@@ -123,6 +122,7 @@ annotationServer <- function(id, grset_reactive, project_output_dir) {
         if (identical(rownames(annotation_df), rownames(beta))) {
           combined_df <- cbind(annotation_df, beta)
           annot_df(combined_df)
+          
           
           tmp_file <- tempfile(fileext = ifelse(input$download_format == "CSV", ".csv", ".xlsx"))
           if (input$download_format == "CSV") {
