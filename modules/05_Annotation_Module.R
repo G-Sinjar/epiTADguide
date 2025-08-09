@@ -19,7 +19,7 @@ annotationUI <- function(id) {
     
     page_sidebar(
       sidebar = sidebar(
-        width = "350px",
+        width = "300px",
         actionButton(ns("run_annot"), "Run Annotation on filtered data"),
         
         # Toggle notes section

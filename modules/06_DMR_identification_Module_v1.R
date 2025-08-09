@@ -335,9 +335,14 @@ dmrs_server <- function(id, filtered_rgset_reactive, tx_gr_filtered_static,proje
             num_cores = current_num_cores
           )
         }, error = function(e) {
-          dmr_status_text(paste(dmr_status_text(), "\n❌ Error during DMR detection:\n", e$message))
+          msg <- e$message
+          if (grepl("Schreibfehler in Verbindung", msg)) {
+            msg <- "A connection write error during the parallelized bumphunter.\nLikely causes: Out of memory (RAM) or worker crash during parallel execution."
+          }
+          dmr_status_text(paste(dmr_status_text(), "\n❌ Error during DMR detection:\n", msg))
           return(NULL)
         })
+        
         ## check bumphunter results
         if (is.null(dmrs_step1_result)) {
           dmr_status_text(paste(dmr_status_text(), "\n❌ Step 1 failed."))
@@ -460,8 +465,7 @@ dmrs_server <- function(id, filtered_rgset_reactive, tx_gr_filtered_static,proje
     return(list(
       dmr_table = dmr_result,
       pheno = pd_reactive,
-      ref_group = reactive({ input$ref_group }),
-      #tested_group <- reactive({ input$tested_group }) # this is the column name of the designmatrix (coef)-> no need in dmp finder
+      ref_group = reactive({ input$ref_group })
     ))
   })
 }

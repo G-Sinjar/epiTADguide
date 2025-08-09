@@ -9,7 +9,7 @@ library(shiny)
 library(bslib)
 library(EnsDb.Hsapiens.v86)
 library(GenomeInfoDb)
-
+conflicts_prefer(Gviz::feature)
 # cpgisland granges should be done once at the top of app server
 
 
@@ -44,9 +44,15 @@ create_gr_cpgs <- function(cpg_table) {
   mcols(gr) <- cpg_table[, 4:ncol(cpg_table), drop = FALSE]
   return(gr)
 }
-## test function 2
-#annotated <- readRDS("C:/Users/ghaza/Documents/ghazal/Bioinformatik_Fächer/Masterarbeit_Project/Scripts/R_Scripts/intermediate_data/annotated_object_20250627.rds")
-#cpgs_gr <- create_gr_cpgs(annotated$annotated_table)
+'## test function 2
+annotated <- readRDS("C:/Users/ghaza/Documents/ghazal/Bioinformatik_Fächer/Masterarbeit_Project/Scripts/R_Scripts/intermediate_data/annotated_object_20250627.rds")
+cpgs_gr <- create_gr_cpgs(annotated$annotated_table)
+
+# case 2: with qval
+annotated_tbl_withqval <- readRDS("../modules/main_app_tests/box_pheno_pass/intermediate_data/annotated_with_qval.rds")
+cpgs_gr_qval <- create_gr_cpgs(annotated_tbl_withqval)
+# manipulate the data 
+cpgs_gr_qval$significance_last_qvalue[cpgs_gr_qval$Name== "cg16556145_BC11"] <- "Sig"'
 
 #--------------------------------------------------------------------------------------------
 # function 3: create granges of offtargets table
@@ -89,8 +95,8 @@ create_gr_TADs_SUBTADs <- function(chr, SUBTADs) {
 }
 
 #setwd("C:/Users/ghaza/Documents/ghazal/Bioinformatik_Fächer/Masterarbeit_Project/Scripts/R_Scripts/utils")
-#test funcgion
-'library(readr)
+'#test funcgion
+library(readr)
 chromosome_name <- "chr13"
 subtad_file_dir <- "../main_app_tests/epic-test/TADcaller_results/4DNFIIH3SM5N/TADcaller_Results/TADs_CAKI2/processed_tads/CAKI2_chr13_25kb_SubTADs.txt"
 SUBTADs <- read_delim(subtad_file_dir, delim = "\t", show_col_types = FALSE)
@@ -151,8 +157,10 @@ create_tracks <- function(genome, chr,
     message("Error creating base tracks: ", e$message)
   })
   
+  #-------------------------------------
   # CpG Probes
-  tryCatch({
+  # V1
+  'tryCatch({
     if (!is.null(gr_cpgs)) {
       sondentrack <- AnnotationTrack(gr_cpgs, chromosome = chr, genome = genome,
                                      name = "CpG Probes", col = NA, fill = "blue",
@@ -160,8 +168,47 @@ create_tracks <- function(genome, chr,
     }
   }, error = function(e) {
     message("Error creating CpG Probes track: ", e$message)
+  })'
+  #----------------------
+  # V2
+  # In create_tracks() - Modified CpG Probes section
+  tryCatch({
+    if (!is.null(gr_cpgs)) {
+      # Create basic track
+      sondentrack <- AnnotationTrack(
+        gr_cpgs,
+        chromosome = chr,
+        genome = genome,
+        col = NA,
+        name = "CpG Probes",
+        id = gr_cpgs$CpGs,
+        showFeatureId = FALSE,
+        stacking = "squish"
+      )
+      
+      # Apply coloring using explicit package reference
+      if ("significance_last_qvalue" %in% colnames(mcols(gr_cpgs))) {
+        # Use Gviz::feature to avoid namespace conflicts
+        Gviz::feature(sondentrack) <- ifelse(
+          gr_cpgs$significance_last_qvalue == "Sig", 
+          "Sig", 
+          "Non-Sig"
+        )
+        
+        # Set display parameters
+        displayPars(sondentrack) <- list(
+          "Sig" = "green",
+          "Non-Sig" = "blue"
+        )
+      } else {
+        # No significance column - all blue
+        displayPars(sondentrack) <- list(fill = "blue")
+      }
+    }
+  }, error = function(e) {
+    message("Error creating CpG Probes track: ", e$message)
   })
-  
+  #------------------------------------------------
   # CpG Islands
   tryCatch({
     if (!is.null(gr_cpgIslands)) {
@@ -194,9 +241,9 @@ create_tracks <- function(genome, chr,
   }, error = function(e) {
     message("Error creating Off-targets track: ", e$message)
   })
-  
+  #--------------------------------------
   # Beta values
-  tryCatch({
+  'tryCatch({
     if (!is.null(gr_cpgs) && !is.null(mcols(gr_cpgs)) && !is.null(num_samples)) {
       beta_values <- as.data.frame(mcols(gr_cpgs)[, tail(seq_along(mcols(gr_cpgs)), num_samples)])
       betaTrack <- DataTrack(gr_cpgs, chromosome = chr, genome = genome,
@@ -204,8 +251,41 @@ create_tracks <- function(genome, chr,
     }
   }, error = function(e) {
     message("Error creating Beta values track: ", e$message)
-  })
+  })'
   
+  # V2:
+  # Beta values - modified version with dynamic column selection
+  tryCatch({
+    if (!is.null(gr_cpgs) && !is.null(mcols(gr_cpgs)) && !is.null(num_samples)) {
+      # Get all metadata column names
+      all_cols <- colnames(mcols(gr_cpgs))
+      
+      # Check if q-value and significance columns exist
+      has_qval_sig <- all(c("qval", "significance_last_qvalue") %in% all_cols)
+      
+      # Determine beta value columns
+      if (has_qval_sig) {
+        # When qval/sig columns exist, beta values are the columns before them
+        beta_cols <- all_cols[(length(all_cols) - num_samples - 1):(length(all_cols) - 2)]
+      } else {
+        # Otherwise just take the last num_samples columns
+        beta_cols <- tail(all_cols, num_samples)
+      }
+      
+      # Extract beta values
+      beta_values <- as.data.frame(mcols(gr_cpgs)[, beta_cols, drop = FALSE])
+      
+      # Create DataTrack
+      betaTrack <- DataTrack(gr_cpgs, 
+                             chromosome = chr, 
+                             genome = genome,
+                             name = "Beta values", 
+                             data = beta_values)
+    }
+  }, error = function(e) {
+    message("Error creating Beta values track: ", e$message)
+  })
+  #-------------------------------
   # Genes
   tryCatch({
     if (!is.null(tx_gr_filtered)) {
@@ -258,17 +338,17 @@ create_tracks <- function(genome, chr,
   ))
 }
 
-################## test function
-'# gene granges which is global
+'################## test function
+# gene granges which is global
 library(EnsDb.Hsapiens.v86)
 edb <- EnsDb.Hsapiens.v86
 options(ucscChromosomeNames = TRUE)
 tx_gr <- genes(edb)
 tx_gr_filtered_global <- keepSeqlevels(tx_gr, standardChromosomes(tx_gr), pruning.mode = "coarse")
-seqlevelsStyle(tx_gr_filtered_global) <- "UCSC"'
+seqlevelsStyle(tx_gr_filtered_global) <- "UCSC"
 # ------------------
-'tracks <- create_tracks(genome = "hg38", chr = "chr13",
-                        gr_cpgs = cpgs_gr,
+tracks <- create_tracks(genome = "hg38", chr = "chr13",
+                        gr_cpgs = cpgs_gr_qval,   # or cpgs_gr
                         gr_cpgIslands = gr_cpgIslands,
                         dmrs_gr = dmrs_gr,
                         gr_offtargets = gr_offtargets,
@@ -317,7 +397,21 @@ plotGvizTracks <- function(tracks, from, to, pheno = NULL, gr_cpgs = NULL, ref_g
   # Set default colors for non-data tracks
   if (!is.null(itrack)) displayPars(itrack) <- list(col = "black", fontcolor = "black")
   if (!is.null(gtrack)) displayPars(gtrack) <- list(col = "black", fontcolor = "black")
-  if (!is.null(cpgsTrack)) displayPars(cpgsTrack) <- list(stacking = "dense", showFeatureId = FALSE)
+  # Ensure CpG track coloring is preserved
+  if (!is.null(cpgsTrack)) {
+    # Get significant features
+    sig_features <- which(Gviz::feature(cpgsTrack) == "Sig")
+    
+    # Apply coloring directly to the track
+    if (length(sig_features) > 0) {
+      displayPars(cpgsTrack) <- list(
+        "Sig" = "green",
+        "Non-Sig" = "blue",
+        fill = ifelse(feature(cpgsTrack) == "Sig", "green", "blue"),
+        showFeatureId = FALSE
+      )
+    }
+  }
   if (!is.null(cpgIslandTrack)) displayPars(cpgIslandTrack) <- list( groupAnnotation = "feature")
   if (!is.null(DmrTrack)) displayPars(DmrTrack) <- list(groupAnnotation = "feature")
   if (!is.null(offtargetTrack)) displayPars(offtargetTrack) <- list(groupAnnotation = "feature", fontcolor.group = "black")
@@ -416,16 +510,16 @@ plotGvizTracks <- function(tracks, from, to, pheno = NULL, gr_cpgs = NULL, ref_g
   }, error = function(e) {
     message("Plotting failed with error: ", e$message)
     message("Track details:")
-    print(summary(to_plot))
+    print(lapply(to_plot, function(x) c(class(x), length(x))))
     stop(e)
   })
 }
 
 
-#pheno <- dmr_list$pheno
-#cpgs_gr
+'pheno <- dmr_list$pheno
+cpgs_gr
 ## test function
-#plotGvizTracks(tracks = tracks, from = 95500000, to = 95550000, pheno = pheno, gr_cpgs=cpgs_gr, ref_group= "unguided")
+plotGvizTracks(tracks = tracks, from = 95552530, to = 95553130, pheno = pheno, gr_cpgs=cpgs_gr, ref_group= "unguided")'
 #----------------------------------------------------------------------------------------
 
 #' Find Chromosomes with TAD and SubTAD Tables in a Given Path and Check for a Specific Chromosome
@@ -595,17 +689,17 @@ find_existing_tads_subtads_chrs_with_check <- function(tissue, resolution, chr, 
   ))
 }
 
-'# Example Usage (assuming you have your files in the specified directory)
+# Example Usage (assuming you have your files in the specified directory)
 processed_tads_output_dir_rv <- "C:/Users/ghaza/Documents/ghazal/Bioinformatik_Fächer/Masterarbeit_Project/Scripts/PythonProject/test/TADcaller_Results/TADs_CAKI2/processed_tads"
 
 tissue_name <- "CAKI2"
 resolution_value <- 25 # Assuming resolution is numeric
 
 # CHANGE THIS LINE:
-available_chrs <- find_existing_tads_subtads_chrs_with_check( # <--- Corrected function name
+available_chrs <- find_existing_tads_subtads_chrs_with_check( 
   tissue = tissue_name,
   resolution = resolution_value,
   processed_data_path = processed_tads_output_dir_rv,
   chr = "chr13"
 )
-print(available_chrs)'
+print(available_chrs)

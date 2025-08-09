@@ -20,7 +20,8 @@ library(processx) # ADDED: Needed for running external processes (Java TADcaller
 #library(IlluminaHumanMethylationEPICv2anno.20a1.hg38)
 library(GenomicRanges) # For GenomicRatioSet and related operations in filtering module
 library(EnsDb.Hsapiens.v86)
-
+library(fs)
+library(purrr)
 
 
 # 2) Source your existing modules
@@ -39,7 +40,8 @@ source("modules/09_TADcalling_module_V1_all_Chr.R")
 source("utils/TADcalling_utils.R")
 source("utils/GVIZ_plot_utils.R")
 source("modules/10_GVIZ_plot_Module_V1.R")
-
+source("modules/11_dmp_module.R")
+source("utils/DMP_utils.R")
 
 
 #3) This is a static object that will be passed to the DMR module
@@ -71,7 +73,7 @@ print(paste("Global: gr_cpgIslands_global loaded. Number of CpG Islands:", lengt
 # 6) UI
 ui <- navbarPage(
   id = "main_tabs",
-  title = "Infinium MethylationEPIC Array Pipeline",
+  title = "MethyTADGuide",
   theme = bs_theme(version = 5, bootswatch = "flatly"),
   
   tabPanel("Load Raw Data",
@@ -100,8 +102,14 @@ ui <- navbarPage(
   ),
   tabPanel("DMR Identification",
            dmrs_ui("dmrs_module_id") ,
+           actionButton("to_dmp", "Next → DMP Identification")
+  ),
+  
+  tabPanel("DMP Identification",
+           dmp_UI("dmp_module_id") ,
            actionButton("to_boxplots", "Next → DMR Boxplots")
   ),
+  
   tabPanel("DMR Boxplots",
            boxplotUI("boxplot_module_id"),
            actionButton("to_offtargets", "Next → Offtargets Import")
@@ -138,7 +146,7 @@ server <- function(input, output, session) {
   observe({
     print("DEBUG: Main App: Initializing UI and disabling tabs/buttons.")
     # Disable all except Offtargets Import and Load Raw Data tab
-    tabs_to_disable <- c("QC Plots", "Normalisation", "Filtering", "Annotation", "DMR Identification", "DMR Boxplots", "Final plot")
+    tabs_to_disable <- c("QC Plots", "Normalisation", "Filtering", "Annotation", "DMR Identification", "DMP Identification","DMR Boxplots", "Final plot")
     lapply(tabs_to_disable, disable_tab)
     
     # Offtargets Import remains enabled always, so no disable call here
@@ -149,6 +157,7 @@ server <- function(input, output, session) {
     shinyjs::disable("to_filter")
     shinyjs::disable("to_annot")
     shinyjs::disable("to_dmrs")
+    shinyjs::disable("to_dmp")
     shinyjs::disable("to_boxplots")
     shinyjs::disable("to_offtargets")
     #shinyjs::disable("to_tadcalling") # commented cause it can work without off-targets -> they wont be ploted if not available but every thing else will be
@@ -161,6 +170,9 @@ server <- function(input, output, session) {
   dmr_results <- reactiveVal(NULL)
   offtargets_results <- reactiveVal(NULL)
   tadcalling_results <- reactiveVal(NULL)
+  dmp_results <- reactiveVal(NULL)
+  boxplot_results <- reactiveVal(NULL)
+  
   
   # --- Module Server Calls and Data Flow ---
   # 1- Load Data Module
@@ -176,7 +188,6 @@ server <- function(input, output, session) {
       shinyjs::disable("to_qc")
     }
   })
-  
   # --- Navigation Logic ---
   # Navigate to QC tab
   observeEvent(input$to_qc, {
@@ -196,6 +207,7 @@ server <- function(input, output, session) {
     )
   })
   
+  #-----------------------------------------------
   # Navigate to Normalisation tab
   observeEvent(input$to_norm, {
     # Ensure normalized_output can be set by the module
@@ -223,7 +235,7 @@ server <- function(input, output, session) {
     })
   })
   
-  
+  #-----------------------------------------------------------
   # Navigate to Filtering tab and run filtering module
   observeEvent(input$to_filter, {
     req(normalized_output()) # Ensure normalized data is available
@@ -250,7 +262,7 @@ server <- function(input, output, session) {
       }
     })
   })
-  
+  #---------------------------------------------------------------
   # Navigate to Annotation tab when clicking "Next → Annotation"
   observeEvent(input$to_annot, {
     req(filter_results()) # Ensure filtered data is available
@@ -275,7 +287,7 @@ server <- function(input, output, session) {
     })
   })
   
-  
+  #---------------------------------------------------
   # --- Navigate to DMR Identification tab ---
   observeEvent(input$to_dmrs, {
     req(filter_results(), annotation_results()) 
@@ -292,27 +304,53 @@ server <- function(input, output, session) {
     
     observe({
       if (!is.null(dmr_results()$dmr_table())) { 
+        shinyjs::enable("to_dmp")
+      } else {
+        shinyjs::disable("to_dmp")
+      }
+    })
+  })
+  #---------------------------------------------------------
+  # --- Navigate to DMP Identification tab ---
+  observeEvent(input$to_dmp, {
+    req(normalized_output(), dmr_results(), filter_results()) 
+    
+    enable_tab("DMP Identification")
+    updateNavbarPage(session, "main_tabs", selected = "DMP Identification")
+    dmp_results_local <- dmp_Server(
+      id = "dmp_module_id",
+      normalized_chosen_methylset = filter_results()$normalized_chosen_methylset,
+      pheno = dmr_results()$pheno,
+      ref_group = dmr_results()$ref_group,
+      norm_method = filter_results()$norm_method_chosen,
+      project_output_dir = reactive({ loaded_data$project_dir() })
+    )
+    dmp_results(dmp_results_local)
+    observe({
+      if (!is.null(dmp_results())) { 
         shinyjs::enable("to_boxplots")
       } else {
         shinyjs::disable("to_boxplots")
       }
     })
   })
-  
-  
+  #--------------------------------------------------------------
   # --- Navigate to DMR Boxplots tab ---
   observeEvent(input$to_boxplots, {
     req(dmr_results(), annotation_results())
     enable_tab("DMR Boxplots")
     updateNavbarPage(session, "main_tabs", selected = "DMR Boxplots")
-    boxplotServer(
+    boxplot_res_local <- boxplotServer(
       id = "boxplot_module_id",
       dmr_output_reactive = dmr_results,
-      annotation_output_reactive = annotation_results
+      annotation_tbl_reactive = annotation_results,
+      dmp_results = dmp_results,
+      project_output_dir =  reactive({ loaded_data$project_dir() })
     )
+    boxplot_results(boxplot_res_local)
     shinyjs::enable("to_offtargets")
   })
-  
+  #----------------------------------------------------------
   # # --- Navigate to off-targets tab ---
   observeEvent(input$to_offtargets, {
     enable_tab("Offtargets Import") # just in case, enable tab
@@ -372,7 +410,7 @@ server <- function(input, output, session) {
   GvizPlotServer(
     id = "myGvizPlot",
     dmr_results = dmr_results,
-    annotation_results = annotation_results,
+    annotation_results = boxplot_results,
     offtarget_table = offtargets_results,
     tadcalling_results = tadcalling_results,
     chr_size_df_global = chr_size_df_global,
@@ -382,3 +420,4 @@ server <- function(input, output, session) {
 }
 
 shinyApp(ui, server)
+

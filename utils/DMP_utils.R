@@ -1,5 +1,5 @@
 # DMP_utils.R
-
+# Author: Ghazal Sinjar
 
 # Funtion 1 -------------------------------------------------------------------------
 #' Calculate mean differences for Beta and M values between two groups.
@@ -107,60 +107,77 @@ calculateMethylationMeanDifferences <- function(normalised_methylset, pheno_tabl
   
   return(combined_results)
 }
+'
 
-
-'# test fucntion 1:
-#dir <- "C:/Users/ghaza/Documents/ghazal/Bioinformatik_Fächer/Masterarbeit_Project/Scripts/R_Scripts/modules/main_app_tests/box_pheno_pass/intermediate_data/Five_objects_normalised_data.rds"
-#methylsets <- readRDS(dir)
-#pheno_table <- pData(methylsets$SWAN)
-#ref_group <- "unguided"
-mean_beta_M_tbl <- calculateMethylationMeanDifferences(normalised_methylset = methylsets$SWAN, pheno_table = pheno_table, ref_group = ref_goup)
-head(mean_beta_M_tbl)'
-
+# test fucntion 1:
+dir <- "C:/Users/ghaza/Documents/ghazal/Bioinformatik_Fächer/Masterarbeit_Project/Scripts/R_Scripts/modules/main_app_tests/box_pheno_pass/intermediate_data/Five_objects_normalised_data.rds"
+methylsets <- readRDS(dir)
+pheno_table <- pData(methylsets$SWAN)
+ref_group <- "unguided"
+mean_beta_M_tbl <- calculateMethylationMeanDifferences(normalised_methylset = methylsets$Noob_Swan, pheno_table = pheno_table, ref_group = ref_group)
+head(mean_beta_M_tbl)
+dim(mean_beta_M_tbl)'
 # Function 2 -------------------------------------------------------------------
 #Add M and Beta mean difference columns to a DMP (Differentially Methylated Positions) table.
 addMeanDifferencesToDMP <- function(dmp_table, combined_Beta_M_mean_table) {
   tryCatch({
-    # Ensure both tables have row names
+    # Validate inputs
     if (is.null(rownames(dmp_table))) {
-      stop("'dmp_table' must have row names (CpG IDs).")
+      stop("'dmp_table' must have row names (CpG IDs)")
     }
     if (is.null(rownames(combined_Beta_M_mean_table))) {
-      stop("'combined_Beta_M_mean_table' must have row names (CpG IDs).")
+      stop("'combined_Beta_M_mean_table' must have row names")
     }
     
-    # Convert to data.frame if they aren't already
+    # Convert to data frames
     dmp_df <- as.data.frame(dmp_table)
     mean_df <- as.data.frame(combined_Beta_M_mean_table)
     
-    # Add the mean differences directly by row name matching
-    dmp_df$M_mean_difference_FC <- mean_df[rownames(dmp_df), "M_mean_difference_FC"]
-    dmp_df$Beta_mean_difference <- mean_df[rownames(dmp_df), "Beta_mean_difference"]
-    # Round all numeric columns to 5 digits
-    numeric_cols <- sapply(dmp_df, is.numeric)
-    dmp_df[numeric_cols] <- lapply(dmp_df[numeric_cols], function(x) {
-      if (is.numeric(x)) {
-        # First round to 5 digits
-        x <- round(x, digits = 5)
-        # Then format to prevent scientific notation
-        format(x, scientific = FALSE, trim = TRUE)
-      } else {
-        x
-      }
-    })
+    # Find matching CpGs
+    common_cpgs <- base::intersect(rownames(dmp_df), rownames(mean_df))
+    if (length(common_cpgs) == 0) {
+      stop("No matching CpG IDs between tables")
+    }
     
-    # Convert formatted numbers back to numeric (without scientific notation)
-    dmp_df[numeric_cols] <- lapply(dmp_df[numeric_cols], function(x) {
-      if (is.character(x)) {
-        as.numeric(x)
-      } else {
-        x
-      }
-    })
-    return(dmp_df)
+    message(paste("Successfully matched", length(common_cpgs), 
+                  "CpGs between DMP and mean difference tables"))
+    
+    # Subset to common CpGs
+    dmp_df <- dmp_df[common_cpgs, , drop = FALSE]
+    mean_df <- mean_df[common_cpgs, , drop = FALSE]
+    
+    # Verify alignment before merging
+    if (!identical(rownames(dmp_df), rownames(mean_df))) {
+      stop("Row name alignment failed after subsetting")
+    }
+    
+    # Add mean difference columns
+    merged_df <- cbind(
+      dmp_df,
+      M_mean_difference_FC = mean_df$M_mean_difference_FC,
+      Beta_mean_difference = mean_df$Beta_mean_difference
+    )
+    
+    # Round numeric columns
+    numeric_cols <- sapply(merged_df, is.numeric)
+    if (any(numeric_cols)) {
+      merged_df[numeric_cols] <- lapply(merged_df[numeric_cols], function(x) {
+        if (is.numeric(x)) signif(x, digits = 5) else x
+      })
+    }
+    
+    return(merged_df)
     
   }, error = function(e) {
-    message("Error adding mean differences to DMP table: ", e$message)
+    # Enhanced error reporting
+    message("\nERROR DETAILS:")
+    message("Input dimensions:")
+    message("- DMP table: ", paste(dim(dmp_table), collapse = " x "))
+    message("- Mean table: ", paste(dim(combined_Beta_M_mean_table), collapse = " x "))
+    if (exists("common_cpgs")) {
+      message("Matching CpGs: ", length(common_cpgs))
+    }
+    message("Error message: ", e$message)
     return(NULL)
   })
 }
@@ -168,13 +185,17 @@ addMeanDifferencesToDMP <- function(dmp_table, combined_Beta_M_mean_table) {
 '#test function
 pheno_table <- pData(methylsets$SWAN)
 pheno <- pheno_table$Sample_Group
-dmp <- dmpFinder(methylsets$SWAN, pheno = pheno, type = "categorical", qCutoff = 1, shrinkVar = FALSE) 
+dmp <- dmpFinder(methylsets$Noob_Swan, pheno = pheno, type = "categorical", qCutoff = 0.6, shrinkVar = FALSE) 
+dim(dmp)
+head(dmp)
 edited_dmp <- addMeanDifferencesToDMP(dmp_table = dmp, combined_Beta_M_mean_table = mean_beta_M_tbl)
+head(edited_dmp)
+dim(edited_dmp)
 # check if it worked
 # Correct way 1:
-edited_dmp["cg24426691_TC11", ]$Beta_mean_difference  
-mean_beta_M_tbl["cg24426691_TC11", "Beta_mean_difference"]     
+edited_dmp["cg12521566_BC21", ]$Beta_mean_difference  
+mean_beta_M_tbl["cg12521566_BC21", "Beta_mean_difference"]     
 # Correct way 2:
-mean_beta_M_tbl["cg06428163_BC21",]$Beta_mean_difference      
-mean_beta_M_tbl$Beta_mean_difference[rownames(mean_beta_M_tbl) == "cg06428163_BC21"] '
+mean_beta_M_tbl["cg15620155_TC21",]$Beta_mean_difference      
+mean_beta_M_tbl$Beta_mean_difference[rownames(mean_beta_M_tbl) == "cg15620155_TC21"] '
 #--------------------------------------------------------

@@ -42,8 +42,9 @@ print("Main App: Initializing data loading...")
 # Replace with your actual file paths
 dmr_list_path <- "../modules/main_app_tests/df/DMR_results/DMRs_unguided_vs_sample_groupguided_cutoff_-0.15_0.15_B0_20250804.rds"
 annotated_path <- "../intermediate_data/annotated_object_20250627.rds"
+annotated_tbl_withqval <- "../main_app_tests/dmr_ram_detect/intermediate_data/annotated_with_qval.rds"
 offtargets_path <- "./intermediate_data/guide1_guide2_guide3_guide4_guide5_guide6.rds"
-tad_subtad_path <- "../main_app_tests/epic-test/TADcaller_results/4DNFIIH3SM5N/TADcaller_Results/TADs_CAKI2/processed_tads"
+tad_subtad_path <- "../main_app_tests/dmr_ram_detect/TADcaller_results/4DNFIIH3SM5N/TADcaller_Results/TADs_CAKI2/processed_tads"
 
 
 # Create a list of autosomal chromosomes (1 to 22)
@@ -56,6 +57,7 @@ all_chrs <- c(autosomal_chrs, sex_chrs)
 
 results_dmr <- readRDS(dmr_list_path)
 results_anno <- readRDS(annotated_path)
+results_ano_qval <- readRDS(annotated_tbl_withqval)
 
 dmr_list <- reactive({
   list(dmr_table = reactiveVal(results_dmr$dmr_table),
@@ -64,10 +66,12 @@ dmr_list <- reactive({
        )})
 
 annotated <- reactive({ list(
-  annotated_table = reactiveVal(results_anno$annotated_table)
+  annotated_table_with_qval = reactiveVal(results_anno$annotated_table)
 )
 })
-
+annotated_qval <- reactive({ list(
+  annotated_table_with_qval = reactiveVal(results_ano_qval)
+) })
 
 if (file.exists(offtargets_path)) {
   offtargets_combined(reactiveVal(readRDS(offtargets_path)))

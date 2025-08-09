@@ -26,7 +26,7 @@ filter_data_ui <- function(id) {
         inputId = ns("norm_method"), 
         label = "Choose normalization method:",
         choices = c(
-          "Raw" = "raw_normalised",
+          "Raw" = "Raw_data",
           "SWAN" = "SWAN",
           "Statified Quantile" = "Quantile",
           "Funnorm" = "Funnorm",
@@ -127,6 +127,8 @@ filter_data_server <- function(id, RGset, raw_normalised, normalized_all_methods
     filtered_grset <- reactiveVal(NULL)
     save_rds_status_msg <- reactiveVal("")
     last_used_method <- reactiveVal(NULL) 
+    # Reactive container for the normalized data before filtering
+    pre_filtered_normalized_data <- reactiveVal(NULL)
     
     
     # Disable the save button by default using shinyjs
@@ -166,14 +168,15 @@ filter_data_server <- function(id, RGset, raw_normalised, normalized_all_methods
         mval_table(NULL)
         
         # Get selected normalized data
-        current_normalized_data_value <- if (input$norm_method == "raw_normalised") {
+        current_normalized_data_value <- if (input$norm_method == "Raw_data") {
           req(raw_normalised()) 
           raw_normalised()
         } else {
           req(normalized_all_methods()) 
           normalized_all_methods()[[input$norm_method]]()
         }
-        
+        message("Dimensions of the object: ", paste(dim(current_normalized_data_value), collapse = " x "))
+        pre_filtered_normalized_data(current_normalized_data_value)
         
         raw_n_initial <- nrow(raw_normalised()) 
         normalized_data_to_filter <- current_normalized_data_value
@@ -312,7 +315,7 @@ filter_data_server <- function(id, RGset, raw_normalised, normalized_all_methods
         # Save automatically with descriptive name
         # 1. Normalization method
         norm_method_label <- switch(input$norm_method, 
-                                    "raw_normalised" = "Raw",
+                                    "Raw_data" = "Raw",
                                     "SWAN" = "SWAN",
                                     "Quantile" = "Quantile",
                                     "Funnorm" = "Funnorm", 
@@ -441,7 +444,8 @@ filter_data_server <- function(id, RGset, raw_normalised, normalized_all_methods
       filtered_data = filtered_grset,
       beta_vals = beta_table,
       m_vals = mval_table,
-      norm_method_chosen = last_used_method
+      norm_method_chosen = last_used_method,
+      normalized_chosen_methylset = pre_filtered_normalized_data
     ))
   })
 }

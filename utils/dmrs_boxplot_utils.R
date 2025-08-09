@@ -71,12 +71,37 @@ extract_cpgs_in_DMR <- function(DMRx, DMR_table, annotated_table, pheno) {
   return(region_cpgs)
 }
 
+'# test function
+annotated_tbl_withqval <- readRDS("../modules/main_app_tests/box_pheno_pass/intermediate_data/annotated_with_qval.rds")
+dim(annotated_tbl_withqval) #891492     40
+sum(!is.na(annotated_tbl_withqval$qval)) # 60
+sum(annotated_tbl_withqval$significance_last_qvalue == "Sig")# 60
+results_dmr <- readRDS("./main_app_tests/box_pheno_pass/DMR_results/DMRs_unguided_vs_sample_groupguided_cutoff_-0.15_0.15_B0_20250804.rds")
+head(results_dmr$dmr_table)
+head(results_dmr$pheno_data)
+cpgs_inDMR1 <- extract_cpgs_in_DMR(DMRx = "DMR1", DMR_table =results_dmr$dmr_table , annotated_table = annotated_tbl_withqval, pheno =results_dmr$pheno_data )
+View(cpgs_inDMR1) # 10 rows
 
-
+# case two the table is not merged with qval
+annotated_tbl <- readRDS("../modules/main_app_tests/dmp_qval_test/intermediate_data/annotated_object_20250808.rds")
+dim(annotated_tbl$annotated_table) #891492     38
+cpgs_inDMR1_noq <- extract_cpgs_in_DMR(DMRx = "DMR1", DMR_table =results_dmr$dmr_table , annotated_table = annotated_tbl$annotated_table, pheno =results_dmr$pheno_data )
+View(cpgs_inDMR1_noq)'
 # ----------------------------------------------------------------------
 # 2. Reshape CpG beta table to long format for plotting
 # ----------------------------------------------------------------------
 
+#' Reshape CpG beta matrix to long format
+#'
+#' Transforms a wide-format beta value matrix of CpGs into a long format
+#' suitable for ggplot or plotly-based boxplots.
+#'
+#' @param region_cpgs Data.frame. Table returned by `extract_cpgs_in_DMR()`.
+#' @param pheno_data Data.frame. Phenotype data with rownames as sample IDs and column `Sample_Group`.
+#'
+#' @return A long-format data.frame with CpG, SampleID, Group, BetaValue, etc.
+#'
+#' @export
 #' Reshape CpG beta matrix to long format
 #'
 #' Transforms a wide-format beta value matrix of CpGs into a long format
@@ -97,20 +122,45 @@ reshape_to_long_beta <- function(region_cpgs, pheno_data) {
   region_cpgs_df <- as.data.frame(region_cpgs)
   pheno_df <- as.data.frame(pheno_data)
   
-  # Column validation
-  required_cols <- c("chr", "pos")
-  if (!all(required_cols %in% colnames(region_cpgs_df))) {
+  # Check for the presence of the required 'chr' and 'pos' columns
+  # This part is kept as per the original function's stop condition
+  if (!all(c("chr", "pos") %in% colnames(region_cpgs_df))) {
     stop("Missing required columns in region_cpgs: 'chr' and/or 'pos'")
   }
+  
+  # Check for the required 'Sample_Group' column
   if (!"Sample_Group" %in% colnames(pheno_df)) {
     stop("Missing 'Sample_Group' column in pheno_data")
   }
   
+  # --- START MODIFIED LOGIC ---
+  # Determine if the optional 'qval' and 'significance_last_qvalue' columns exist
+  has_qval_sig <- all(c("qval", "significance_last_qvalue") %in% colnames(region_cpgs_df))
+  
   # Sample handling
   m <- nrow(pheno_df)
-  beta_cols <- tail(colnames(region_cpgs_df), m)
-  beta_values <- region_cpgs_df[, beta_cols, drop = FALSE]
   
+  # Dynamically determine beta columns based on the presence of qval/significance columns
+  if (has_qval_sig) {
+    # If qval and significance columns are present, assume they are the last two columns
+    # Beta columns are the columns before them
+    beta_cols <- colnames(region_cpgs_df)[(ncol(region_cpgs_df) - m - 1):(ncol(region_cpgs_df) - 2)]
+  } else {
+    # If qval and significance columns are missing, assume the last m columns are the beta values
+    beta_cols <- tail(colnames(region_cpgs_df), m)
+  }
+  # --- END MODIFIED LOGIC ---
+  
+  # Additional validation checks
+  if (length(beta_cols) != m) {
+    stop("Number of beta columns doesn't match number of samples")
+  }
+  if (!all(beta_cols %in% rownames(pheno_df))) {
+    stop("Some beta columns don't match pheno_data sample names")
+  }
+  
+  # Validation of beta values
+  beta_values <- region_cpgs_df[, beta_cols, drop = FALSE]
   if (!all(vapply(beta_values, is.numeric, logical(1)))) {
     stop("Non-numeric values found in beta columns")
   }
@@ -118,13 +168,13 @@ reshape_to_long_beta <- function(region_cpgs, pheno_data) {
     stop("Beta values outside [0,1] range detected")
   }
   
-  # Create CpG identifier
+  # Create CpG identifier if not already present
   if (!"CpGName" %in% colnames(region_cpgs_df)) {
     region_cpgs_df$CpGName <- rownames(region_cpgs_df)
   }
   
   # Core processing pipeline
-  region_cpgs_df %>%
+  result <- region_cpgs_df %>%
     dplyr::arrange(.data$pos) %>%
     tidyr::pivot_longer(
       cols = all_of(beta_cols),
@@ -132,24 +182,52 @@ reshape_to_long_beta <- function(region_cpgs, pheno_data) {
       values_to = "BetaValue"
     ) %>%
     dplyr::mutate(
-      SampleID = gsub("^X", "", SampleID),  # X am Anfang entfernen!
+      SampleID = gsub("^X", "", SampleID),
       Group = pheno_df$Sample_Group[match(SampleID, rownames(pheno_df))],
       PositionLabel = paste(.data$CpGName, "\npos=", .data$pos)
-    ) %>%
-    dplyr::select(
-      "chr", "pos", "CpGName", "SampleID", "Group", "BetaValue", "PositionLabel"
     )
+  
+  # Conditionally select and mutate based on optional columns
+  if (has_qval_sig) {
+    result <- result %>%
+      dplyr::select(
+        "chr", "pos", "CpGName", "SampleID", "Group", "BetaValue", "PositionLabel", "qval", "significance_last_qvalue"
+      ) %>%
+      dplyr::mutate(
+        qval = as.numeric(.data$qval),
+        significance_last_qvalue = factor(.data$significance_last_qvalue, levels = c("Sig", "Insig"))
+      )
+  } else {
+    result <- result %>%
+      dplyr::select(
+        "chr", "pos", "CpGName", "SampleID", "Group", "BetaValue", "PositionLabel"
+      )
+  }
+  
+  return(result)
 }
 
+
+#test function
+'# input from privious function
+long_dmr1 <-  reshape_to_long_beta(region_cpgs= cpgs_inDMR1, pheno_data =results_dmr$pheno_data) 
+dim(long_dmr1) #80  7
+View(long_dmr1)
+# case 2: no qval
+long_DMR1_noq <- reshape_to_long_beta(region_cpgs= cpgs_inDMR1_noq, pheno_data =results_dmr$pheno_data)
+View(long_DMR1_noq)'
 # ----------------------------------------------------------------------
 # 3. Create boxplot of beta values across groups and CpGs
 # ----------------------------------------------------------------------
+# This function creates a boxplot for Beta values grouped by 'Group' and 'CpGName'.
+# It can handle both static and interactive plots. The boxplot border colors
+# are determined by a 'significance_last_qvalue' column.
+
 create_boxplot <- function(
     long_format_table, 
     interactive = FALSE, 
     use_positional_spacing = FALSE,
-    ref_group = NULL  # New parameter for reference group
-) {
+    ref_group = NULL) {
   
   # Step 1: Input and data checks
   if (is.null(long_format_table) || nrow(long_format_table) == 0) {
@@ -160,14 +238,27 @@ create_boxplot <- function(
     stop("Error: Not all CpGs are on one chromosome.")
   }
   
-  # Step 2: Dynamic color palette generation with proper group level handling
-  group_levels <- sort(unique(as.character(long_format_table$Group)))  # Ensure character type
+  # Check for significance data
+  has_significance_data <- all(c("qval", "significance_last_qvalue") %in% names(long_format_table))
+  
+  if (has_significance_data) {
+    long_format_table <- long_format_table %>%
+      mutate(
+        significance_last_qvalue = factor(significance_last_qvalue, levels = c("Sig", "Insig"))
+      )
+  }
+  
+  if (!use_positional_spacing) {
+    long_format_table <- long_format_table %>%
+      mutate(PositionLabel = factor(PositionLabel, levels = unique(long_format_table[order(long_format_table$pos), ]$PositionLabel)))
+  }
+  
+  # Step 3: Dynamic color palette generation
+  group_levels <- sort(unique(as.character(long_format_table$Group)))
   n_groups <- length(group_levels)
   
-  # Create color palette ensuring proper naming
   if (n_groups == 2) {
     if (!is.null(ref_group)) {
-      # Validate and clean reference group
       ref_group <- as.character(ref_group)
       if (!ref_group %in% group_levels) {
         warning("Specified ref_group '", ref_group, "' not found in data groups. Using default ordering.")
@@ -176,24 +267,19 @@ create_boxplot <- function(
     }
     
     if (!is.null(ref_group)) {
-      # Ensure reference group is first and gets blue
       other_group <- setdiff(group_levels, ref_group)
       group_levels <- c(ref_group, other_group)
       color_palette <- c("blue", "orange")
-      names(color_palette) <- group_levels  # Explicit naming
     } else {
-      # Default ordering
       color_palette <- c("blue", "orange")
-      names(color_palette) <- group_levels  # Explicit naming
     }
+    names(color_palette) <- group_levels
   } else {
-    # For >2 groups
     color_palette <- rainbow(n_groups)
-    names(color_palette) <- group_levels  # Explicit naming
+    names(color_palette) <- group_levels
   }
   
-  
-  # Step 3: Plot setup and aesthetics
+  # Step 4: Plot setup
   x_col <- if (use_positional_spacing) "pos" else "PositionLabel"
   
   # Define text aesthetics for tooltips
@@ -207,12 +293,12 @@ create_boxplot <- function(
     long_format_table$SampleID
   }
   
-  # Calculate mean values for each group at each position
+  # Calculate mean Beta values
   mean_values <- long_format_table %>%
     group_by(!!sym(x_col), Group) %>%
     summarise(mean_beta = mean(BetaValue, na.rm = TRUE), .groups = "drop")
   
-  # Create a grouping variable that combines position and group
+  # Create grouping variable for proper dodging
   long_format_table$group_pos <- interaction(long_format_table[[x_col]], long_format_table$Group)
   mean_values$group_pos <- interaction(mean_values[[x_col]], mean_values$Group)
   
@@ -225,7 +311,7 @@ create_boxplot <- function(
   
   pos_jit <- position_jitterdodge(jitter.width = 0.2, dodge.width = 0.75)
   
-  # Step 4: Create the base ggplot object
+  # Step 5: Create the base ggplot object
   p <- ggplot(long_format_table, aes_string(x = x_col, y = "BetaValue", fill = "Group")) +
     theme_minimal() +
     labs(
@@ -235,28 +321,54 @@ create_boxplot <- function(
     ) +
     theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 12))
   
-  # Apply color scales only once
   if (length(color_palette) > 0) {
-    p <- p + scale_fill_manual(values = color_palette) +
-      scale_color_manual(values = color_palette)
+    p <- p + scale_fill_manual(values = color_palette)
   }
   
-  # Step 5: Add layers based on user options
+  # Add boxplot with proper dodging
   if (use_positional_spacing && !interactive) {
-    p <- p + geom_boxplot(
-      aes(group = group_pos),
-      outlier.shape = NA,
-      color = "black",
-      lwd = 0.5,
-      position = pos_dodge
-    )
+    if (has_significance_data) {
+      p <- p + geom_boxplot(
+        aes(group = group_pos, color = significance_last_qvalue),
+        outlier.shape = NA,
+        lwd = 0.5,
+        position = pos_dodge
+      ) +
+        scale_color_manual(
+          name = "Significance",
+          values = c("Sig" = "green3", "Insig" = "black"),
+          labels = c("Sig" = "Significant", "Insig" = "Non-significant")
+        )
+    } else {
+      p <- p + geom_boxplot(
+        aes(group = group_pos),
+        color = "black",
+        outlier.shape = NA,
+        lwd = 0.5,
+        position = pos_dodge
+      )
+    }
   } else {
-    p <- p + geom_boxplot(
-      outlier.shape = NA,
-      color = "black",
-      lwd = 0.5,
-      position = pos_dodge
-    )
+    if (has_significance_data) {
+      p <- p + geom_boxplot(
+        aes(color = significance_last_qvalue),
+        outlier.shape = NA,
+        lwd = 0.5,
+        position = pos_dodge
+      ) +
+        scale_color_manual(
+          name = "Significance",
+          values = c("Sig" = "green3", "Insig" = "black"),
+          labels = c("Sig" = "Significant", "Insig" = "Non-significant")
+        )
+    } else {
+      p <- p + geom_boxplot(
+        color = "black",
+        outlier.shape = NA,
+        lwd = 0.5,
+        position = pos_dodge
+      )
+    }
   }
   
   # Add mean diamonds
@@ -267,12 +379,14 @@ create_boxplot <- function(
     position = pos_dodge
   )
   
+  # Add jittered points
   if (interactive) {
     p <- suppressWarnings(
       p + geom_jitter(
-        aes(color = Group, text = text), 
+        aes(fill = Group, text = text), 
         position = pos_jit, 
         shape = 21,
+        color = "black", 
         size = 2.5,
         stroke = 0.5
       )
@@ -292,3 +406,24 @@ create_boxplot <- function(
     return(p)
   }
 }
+
+
+'# test function
+
+# make a cpg significant to color in green
+long_dmr1_manipulated <- long_dmr1 %>%
+  mutate(significance_last_qvalue = ifelse(row_number() <= 8, "Sig", "Insig"))
+
+#View(long_dmr1_manipulated)
+create_boxplot(
+  long_format_table =long_dmr1_manipulated, 
+  interactive =FALSE, 
+  use_positional_spacing = TRUE,
+  ref_group = "unguided")
+# case 2 : no qval column
+create_boxplot(
+  long_format_table =long_DMR1_noq, 
+  interactive =FALSE, 
+  use_positional_spacing = TRUE,
+  ref_group = "unguided")
+'

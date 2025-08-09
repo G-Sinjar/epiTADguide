@@ -23,7 +23,7 @@ dmp_UI <- function(id) {
         
         # q-value cutoff numeric input
         numericInput(ns("qvalue_cutoff"), "q-value Cutoff (FDR):",
-                     value = 0.1, min = 0, max = 1, step = 0.01),
+                     value = 0.09999, min = 0, max = 1, step = 0.00001),
         br(),
         # Reference group display
         # Reference group display
@@ -105,7 +105,7 @@ dmp_UI <- function(id) {
 # ─────────────────────────────────────
 # SERVER FUNCTION 
 # ─────────────────────────────────────
-dmp_Server <- function(id, normalisation_results, pheno, ref_group, norm_method, project_output_dir) {
+dmp_Server <- function(id, normalized_chosen_methylset, pheno, ref_group, norm_method, project_output_dir) {
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
     
@@ -115,6 +115,7 @@ dmp_Server <- function(id, normalisation_results, pheno, ref_group, norm_method,
     dmp_final_table <- reactiveVal(NULL)
     # Reactive value to hold the dmpFinder results for debugging
     dmp_results_reactive <- reactiveVal(NULL)
+    last_run_qvalue <- reactiveVal(NULL)
     # Inside moduleServer
     status_messages <- reactiveVal("")
     #--------------------------
@@ -169,7 +170,23 @@ dmp_Server <- function(id, normalisation_results, pheno, ref_group, norm_method,
       write.csv(results_table, filepath, row.names = TRUE)
       return(filepath)
     }
-    
+    #--------------------------------------
+    # Function to save results as RDS
+    save_results_rds <- function(dmp_table, last_qvalue, output_dir) {
+      intermediate_dir <- file.path(output_dir, "intermediate_data")
+      if (!dir.exists(intermediate_dir)) {
+        dir.create(intermediate_dir, recursive = TRUE)
+      }
+      filename <- paste0("DMP_results_", norm_method(), "_", last_qvalue, "qval.rds")
+      filepath <- file.path(intermediate_dir, filename)
+      
+      saveRDS(list(
+        dmp_table = dmp_table,
+        last_qvalue = last_qvalue
+      ), file = filepath)
+      
+      return(filepath)
+    }
     #-----------------------------------------------------------
     # Observe changes to the q-value cutoff and reset the UI
     observeEvent(input$qvalue_cutoff, {
@@ -185,7 +202,7 @@ dmp_Server <- function(id, normalisation_results, pheno, ref_group, norm_method,
       
       # ----------------- Debugging Step 0: Input Validation -----------------
       append_message("Step 0: Validating inputs...\n")
-      req(normalisation_results(), pheno(), ref_group(), norm_method(), project_output_dir())
+      req(normalized_chosen_methylset(), pheno(), ref_group(), norm_method(), project_output_dir())
       
       if (!dir.exists(project_output_dir())) {
         append_message(paste("Error: Project Directory", project_output_dir(), "does not exist. ❌ Analysis aborted.\n"))
@@ -193,16 +210,26 @@ dmp_Server <- function(id, normalisation_results, pheno, ref_group, norm_method,
       }
       
       withProgress(message = "DMP Analysis in Progress", value = 0, {
+        # --- Step 1: Access MethylSet ---
+        incProgress(0.1, detail = "Accessing normalized data...")
+        append_message("Step 1: Accessing normalized methylset...")
         
-        # --- Step 1: Calculate Methylation Mean Differences ---
-        incProgress(0.2, detail = "Calculating mean differences for Beta and M values...")
-        append_message("Step 1: Calculating mean differences of Beta and M values for each CpG...\n")
+        # NEW: More detailed methylset information
+        current_methylset <- normalized_chosen_methylset()
+        # debugging
+        message(paste0("Methylset class: ", class(current_methylset)[1]))
+        message(paste0("Dimensions: ", paste(dim(current_methylset), collapse = " x ")))
+        message(paste0("First 3 samples: ", paste(sampleNames(current_methylset)[1:3], collapse = ", ")))
+        message(paste0("Number of probes: ", nrow(current_methylset)))
         
-        current_methylset <- normalisation_results()[[norm_method()]]
         if (is.null(current_methylset)) {
           append_message(paste0("Error: Normalisaed data for '", norm_method(), "' not found. ❌ Analysis aborted.\n"))
           return()
         }
+        
+        # --- Step 2: Calculate Methylation Mean Differences ---
+        incProgress(0.2, detail = "Calculating mean differences for Beta and M values...")
+        append_message("Step 1: Calculating mean differences of Beta and M values for each CpG...\n")
         
         tryCatch({
           calculated_mean_diffs <- calculateMethylationMeanDifferences(
@@ -215,7 +242,7 @@ dmp_Server <- function(id, normalisation_results, pheno, ref_group, norm_method,
           print(paste("number of rows in m_beta_combine table: ", nrow(calculated_mean_diffs)))
           append_message("✅ completed.\n")
         }, error = function(e) {
-          append_message(paste0("Error in Step 1: ", as.character(e$message), ". ❌ Analysis aborted.\n"))
+          append_message(paste0("Error in Step 1: ", e$message, ". ❌ Analysis aborted.\n"))
           return()
         })
         
@@ -242,7 +269,7 @@ dmp_Server <- function(id, normalisation_results, pheno, ref_group, norm_method,
           print(paste("number of rows in dmpfinder original results table: ", nrow(dmp_raw)))
           append_message("✅ completed.\n")
         }, error = function(e) {
-         append_message(paste0("Error in Step 2 (dmpFinder): ", as.character(e$message), ". ❌ Analysis aborted.\n"))
+         append_message(paste0("Error in Step 2 (dmpFinder): ", e$message, ". ❌ Analysis aborted.\n"))
           return()
         })
         
@@ -279,10 +306,10 @@ dmp_Server <- function(id, normalisation_results, pheno, ref_group, norm_method,
           saved_path <- save_dmp_results(final_dmp, project_output_dir())
           append_message(paste0("✅ DMP analysis completed successfully! " , nrow(dmp_final_table()), " significant DMPs found. Results saved to: " , saved_path, "\n"))
         }, error = function(e) {
-         append_message(paste0("Error in saving the DMP table: ", as.character(e$message), ". ❌ Analysis aborted.\n"))
+         append_message(paste0("Error in saving the DMP table: ", e$message, ". ❌ Analysis aborted.\n"))
           return()
         })
-        
+    
         incProgress(0.2, detail = "Rendering table and preparing downloads... ")
         output$dmp_table <- DT::renderDataTable({
           req(dmp_final_table())
@@ -296,6 +323,18 @@ dmp_Server <- function(id, normalisation_results, pheno, ref_group, norm_method,
           )
         })
       })
+      # At the very end of successful processing:
+      if (!is.null(dmp_final_table()) && nrow(dmp_final_table()) > 0) {
+        last_run_qvalue(input$qvalue_cutoff)  # Store the q-value used
+        # Save the results as RDS
+        rds_path <- save_results_rds(
+          dmp_table = dmp_final_table(),
+          last_qvalue = input$qvalue_cutoff,
+          output_dir = project_output_dir()
+        )
+        
+        append_message(paste0("📁 Saved intermediate results to: ", rds_path, "\n"))
+      }
     })
     
     # NEW: Render the DMP table based on the dmp_final_table reactive value
@@ -330,10 +369,28 @@ dmp_Server <- function(id, normalisation_results, pheno, ref_group, norm_method,
     )
     
     # Return the final DMP table as a module output
-    return(dmp_final_table)
+    # Modify the return statement to always return the q-value, even when no DMPs are found
+    return(list(
+      DMP_tbl = reactive({ 
+        if (is.null(dmp_final_table()) || nrow(dmp_final_table()) == 0) {
+          NULL
+        } else {
+          dmp_final_table() 
+        }
+      }),
+      last_qvalue = reactive({ 
+        if (is.null(dmp_final_table()) || nrow(dmp_final_table()) == 0) {
+          input$qvalue_cutoff  # Return the cutoff that was used, even if no DMPs found
+        } else {
+          last_run_qvalue() 
+        }
+      })
+    ))
   })
 }
-# test module
+
+
+'# test module
 # app.R
 
 # Load required libraries
@@ -354,8 +411,9 @@ tryCatch({
   methylsets <- readRDS(dir)
   message("Data loaded successfully.")
 }, error = function(e) {
-  stop("Error loading RDS file: ", as.character(e$message))
+  stop("Error loading RDS file: ", e$message)
 })
+
 
 # Extract pheno data and set reference group
 pheno_table <- pData(methylsets$SWAN)
@@ -378,45 +436,25 @@ ui <- page_navbar(
 
 # --- Shiny Server ---
 server <- function(input, output, session) {
-  # --- Debugging messages for the server startup ---
   message("Server function has started.")
   
-  # Reactive expressions to pass to the module
-  # These are now correctly structured to return the raw objects, not reactiveVals.
-  normalisation_results_r <- reactive({
-    message("`normalisation_results_r` is being accessed. Returning list of MethylSets.")
-    return(methylsets)
-  })
+  # Solution 1: List of functions
+  normalisation_results_r <- reactive({methylsets$SWAN  })
   
-  pheno_r <- reactive({
-    message("`pheno_r` is being accessed. Returning pheno_table.")
-    return(pheno_table)
-  })
+  # Other reactives remain the same
+  pheno_r <- reactive(pheno_table)
+  project_output_dir_r <- reactive(project_path)
+  ref_group_r <- reactive(ref_group)
+  norm_method_r <- reactiveVal("SWAN") 
   
-  project_output_dir_r <- reactive({
-    message("`project_output_dir_r` is being accessed. Returning project_path.")
-    return(project_path)
-  })
-  
-  ref_group_r <- reactive({
-    message("`ref_group_r` is being accessed. Returning ref_group.")
-    return(ref_group)
-  })
-  
-  norm_method_r <- reactive({
-    message("`norm_method_r` is being accessed. Returning normalization method: SWAN.")
-    return("SWAN")
-  })
-  
-  # Call the DMP module server function
+  # Call module
   dmp_Server("dmp",
-             normalisation_results = normalisation_results_r,
+             normalized_chosen_methylset = normalisation_results_r,
              pheno = pheno_r,
              project_output_dir = project_output_dir_r,
              ref_group = ref_group_r,
-             norm_method = norm_method_r
-  )
+             norm_method = norm_method_r)
 }
 
 # --- Run the application ---
-shinyApp(ui, server)
+shinyApp(ui, server)'

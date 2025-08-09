@@ -213,7 +213,8 @@ pheno_table <- pData(methylsets$SWAN)
 pheno <- pheno_table$Sample_Group
 dmp <- dmpFinder(methylsets$SWAN, pheno = pheno, type = "categorical", qCutoff = 1, shrinkVar = FALSE) 
 dim(dmp) # 936990      4
-head(dmp)
+options(scipen = 999)
+View(dmp)
 ```
 # Editing DMP table
 ```{r}

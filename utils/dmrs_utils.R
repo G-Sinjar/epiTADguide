@@ -36,7 +36,7 @@ conflicts_prefer(base::setdiff)
 #' @importFrom doParallel registerDoParallel
 #'
 #' @export
-run_bumphunter_dmrs <- function(rgSet, ref_sample_group, tested_group_colname, cutoff = 0.15, B = 0, num_cores = 1) {
+'run_bumphunter_dmrs <- function(rgSet, ref_sample_group, tested_group_colname, cutoff = 0.15, B = 0, num_cores = 1) {
   # Extract phenotype data
   pd <- tryCatch({
     pData(rgSet)
@@ -45,7 +45,7 @@ run_bumphunter_dmrs <- function(rgSet, ref_sample_group, tested_group_colname, c
   })
   
   if (!"Sample_Group" %in% colnames(pd)) {
-    stop("Column 'Sample_Group' not found in phenotype data.")
+    stop("Column *Sample_Group* not found in phenotype data.")
   }
   
   # Prepare phenotype factor
@@ -54,7 +54,7 @@ run_bumphunter_dmrs <- function(rgSet, ref_sample_group, tested_group_colname, c
   
   # Check if the reference group exists
   if (!ref_sample_group %in% levels(sample_group)) {
-    stop(paste("Reference group '", ref_sample_group, "' not found in 'Sample_Group' levels."))
+    stop(paste("Reference group ", ref_sample_group, " not found in *Sample_Group* levels."))
   }
   
   # Set the reference level
@@ -68,13 +68,13 @@ run_bumphunter_dmrs <- function(rgSet, ref_sample_group, tested_group_colname, c
   
   # Error handling for the tested group name
   if (length(group_col_index) == 0) {
-    stop(paste("The tested group column '", tested_group_colname, "' was not found in the design matrix.
+    stop(paste("The tested group column ", tested_group_colname, " was not found in the design matrix.
                Available columns are:", paste(colnames(designMatrix), collapse = ", ")))
   }
   
   # Set up parallel backend
   if (!requireNamespace("doParallel", quietly = TRUE)) {
-    stop("Package 'doParallel' is required for parallel execution.")
+    stop("Package doParallel is required for parallel execution.")
   }
   doParallel::registerDoParallel(cores = num_cores)  
   
@@ -104,9 +104,118 @@ run_bumphunter_dmrs <- function(rgSet, ref_sample_group, tested_group_colname, c
   rownames(dmrs_tbl) <- NULL
   
   return(dmrs_tbl) # <--- Returns only the data frame
+}'
+
+#-------------------------------------------------------------------------------------------
+# V2 with Ram checking
+run_bumphunter_dmrs <- function(rgSet, ref_sample_group, tested_group_colname,
+                                cutoff = 0.15, B = 0, num_cores = 1) {
+  
+  # --- Helper: cross-platform RAM detection ---
+  get_total_ram_gb <- function() {
+    sysname <- Sys.info()[["sysname"]]
+    
+    if (sysname == "Windows") {
+      mem_mb <- suppressWarnings(utils::memory.limit()) # returns MB
+      if (!is.na(mem_mb) && mem_mb > 0) return(mem_mb / 1024)
+    } else if (sysname == "Linux") {
+      mem_kb <- suppressWarnings(as.numeric(
+        system("grep MemTotal /proc/meminfo | awk '{print $2}'", intern = TRUE)
+      ))
+      if (!is.na(mem_kb)) return(mem_kb / 1024 / 1024)
+    } else if (sysname == "Darwin") {
+      mem_bytes <- suppressWarnings(as.numeric(
+        system("sysctl -n hw.memsize", intern = TRUE)
+      ))
+      if (!is.na(mem_bytes)) return(mem_bytes / 1024^3)
+    }
+    
+    return(NA_real_)  # unknown RAM
+  }
+  
+  # --- Memory check ---
+  dataset_size_mb <- as.numeric(object.size(rgSet)) / (1024^2)
+  total_ram_gb <- get_total_ram_gb()
+  
+  if (!is.na(total_ram_gb)) {
+    est_usage_gb <- (dataset_size_mb * num_cores) / 1024
+    if (est_usage_gb > total_ram_gb * 0.8) {
+      message(sprintf(
+        "⚠ Estimated memory usage %.2f GB exceeds 80%% of total RAM (%.2f GB). Reducing cores.",
+        est_usage_gb, total_ram_gb
+      ))
+      num_cores <- max(1, floor((total_ram_gb * 0.8) / (dataset_size_mb / 1024)))
+    }
+  }
+  
+  message(sprintf("Using %d cores for bumphunter analysis.", num_cores))
+  
+  # --- Extract phenotype data ---
+  pd <- tryCatch({
+    pData(rgSet)
+  }, error = function(e) {
+    stop(paste("Error extracting phenotype data:", e$message))
+  })
+  
+  if (!"Sample_Group" %in% colnames(pd)) {
+    stop("Column 'Sample_Group' not found in phenotype data.")
+  }
+  
+  sample_group <- pd$Sample_Group
+  if (!is.factor(sample_group)) sample_group <- factor(sample_group)
+  
+  if (!ref_sample_group %in% levels(sample_group)) {
+    stop(sprintf("Reference group '%s' not found in 'Sample_Group' levels.", ref_sample_group))
+  }
+  
+  sample_group <- relevel(sample_group, ref = ref_sample_group)
+  designMatrix <- model.matrix(~ sample_group)
+  
+  group_col_index <- which(colnames(designMatrix) == tested_group_colname)
+  if (length(group_col_index) == 0) {
+    stop(sprintf(
+      "The tested group column '%s' was not found in the design matrix. Available columns: %s",
+      tested_group_colname, paste(colnames(designMatrix), collapse = ", ")
+    ))
+  }
+  
+  # --- Parallel setup with PSOCK ---
+  if (!requireNamespace("doParallel", quietly = TRUE)) {
+    stop("Package 'doParallel' is required for parallel execution.")
+  }
+  options(snowFTTimeout = 300)  # 5 min timeout
+  cl <- parallel::makeCluster(num_cores, type = "PSOCK")
+  doParallel::registerDoParallel(cl)
+  
+  # --- Run bumphunter with special error handling ---
+  dmrs <- tryCatch({
+    bumphunter(
+      rgSet,
+      design = designMatrix,
+      coef = group_col_index,
+      cutoff = cutoff,
+      B = B,
+      type = "Beta",
+      smooth = TRUE
+    )
+  }, error = function(e) {
+    if (grepl("Schreibfehler in Verbindung", e$message)) {
+      warning("❌ Error during DMR detection: a connection write error during the parallelized bumphunter. Likely causes: Out of memory (RAM).")
+    } else {
+      warning(paste("Error during bumphunter execution:", e$message))
+    }
+    return(NULL)
+  })
+  
+  # Always stop cluster
+  parallel::stopCluster(cl)
+  
+  if (is.null(dmrs)) return(NULL)
+  
+  dmrs_tbl <- as.data.frame(dmrs$table)
+  rownames(dmrs_tbl) <- NULL
+  return(dmrs_tbl)
 }
-
-
 
 
 

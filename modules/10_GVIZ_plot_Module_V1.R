@@ -165,10 +165,10 @@ GvizPlotServer <- function(id,
     
     gr_cpgs <- reactive({
       req(annotation_results())
-      req(annotation_results()$annotated_table)
+      req(annotation_results()$annotated_table_with_qval)
       print("Reactive: gr_cpgs is calculating...")
       tryCatch({
-        gr <- create_gr_cpgs(annotation_results()$annotated_table())
+        gr <- create_gr_cpgs(annotation_results()$annotated_table_with_qval())
         print(paste("Reactive: gr_cpgs created with", length(gr), "CpGs."))
         gr
       }, error = function(e) {

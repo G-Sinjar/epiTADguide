@@ -292,7 +292,7 @@ loadDataServer <- function(id) {
         
         # Step 6: Extracting sample info and CpG count
         append_status("Step 6: Extracting sample and CpG info...")
-        incProgress(1/6, detail = "Extracting summary info")
+        incProgress(1/7, detail = "Extracting summary info")
         
         sample_slide_array <- sampleNames(RGset_val)
         num_samples <- length(sample_slide_array)
@@ -335,6 +335,26 @@ loadDataServer <- function(id) {
         targets(targets_val)
         
         incProgress(0, detail = "Done!")
+        # New Step: Save intermediate data
+        append_status("Step 7: Saving intermediate data...")
+        incProgress(1/7, detail = "Saving data")
+        
+        intermediate_dir <- file.path(project_output_dir(), "intermediate_data")
+        if (!dir.exists(intermediate_dir)) {
+          dir.create(intermediate_dir, recursive = TRUE)
+        }
+        
+        # Define file paths
+        rgset_filepath <- file.path(intermediate_dir, "RGset.rds")
+
+        # Save the objects
+        tryCatch({
+          saveRDS(RGset_val, file = rgset_filepath)
+          append_status(paste0("✅ Intermediate data saved successfully to ", intermediate_dir, "."))
+        }, error = function(e) {
+          append_status(paste0("❌ Error saving intermediate data: ", e$message))
+          showNotification("Error saving intermediate data.", type = "error", duration = 8)
+        })
       }) # Closes withProgress block
       
     }) # Closes observeEvent(input$load_btn, { ... })

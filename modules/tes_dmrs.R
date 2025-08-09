@@ -1,4 +1,4 @@
-'# test 06-DMR module
+# test 06-DMR module
 # libraries especially for this module
 library(DT)        # For interactive data tables
 library(openxlsx)
@@ -65,13 +65,13 @@ server <- function(input, output, session) {
                                  tx_gr_filtered,
                                  project_output_dir = reactive({dir_path}))
 }
-shinyApp(ui, server)'
+shinyApp(ui, server)
 
 
 
 
 #--------------------------------------------------
-# test both  06-07 modules
+'# test both  06-07 modules
 # libraries especially for this module
 library(DT)        # For interactive data tables
 library(openxlsx)
@@ -168,4 +168,4 @@ server <- function(input, output, session) {
   })
 }
 
-shinyApp(ui, server)
+shinyApp(ui, server)'

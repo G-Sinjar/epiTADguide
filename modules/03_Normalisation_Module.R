@@ -170,6 +170,7 @@ norm_server <- function(id, RGset, raw_normalised, targets, project_output_dir) 
           # Wrap everything in tryCatch to handle errors during save
           tryCatch({
             normalised_list <- list(
+              Raw = raw_normalised(),
               SWAN = SWAN_normalised_res(),
               Quantile = Quantile_normalised_res(),
               Funnorm = funnorm_normalised_res(),
@@ -186,7 +187,7 @@ norm_server <- function(id, RGset, raw_normalised, targets, project_output_dir) 
               dir.create(outputDir, recursive = TRUE)
             }
             # Save the file
-            saveRDS(normalised_list, file = file.path(outputDir, "Five_objects_normalised_data.rds"))
+            saveRDS(normalised_list, file = file.path(outputDir, "Six_objects_normalised_data.rds"))
             showNotification("✅ All normalizations saved successfully!", type = "message", duration = 10)
             incProgress(1, detail = "All normalizations saved successfully!")
             
@@ -359,6 +360,7 @@ norm_server <- function(id, RGset, raw_normalised, targets, project_output_dir) 
     
     # Return a list of reactive values for downstream modules
     return(list(
+      Raw = raw_normalised,
       SWAN = SWAN_normalised_res,
       Quantile = Quantile_normalised_res,
       Funnorm = funnorm_normalised_res,
