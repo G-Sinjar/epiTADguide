@@ -35,19 +35,20 @@ tadcalling_ui <- function(id) {
         ),
         
         textInput(
-          inputId = ns("mcool_path"), # Namespace input ID
+          inputId = ns("mcool_path"),
           label = "Path to .mcool file",
           placeholder = "C:\\path\\to\\your\\file.mcool",
           width = "100%"
         ),
+        helpText("💡 After copying the path please add at the end of it \\mcool_file_name "),
         
         selectInput(
-          inputId = ns("java_memory"), # Namespace input ID
+          inputId = ns("java_memory"),
           label = "RAM Usage Limit",
           choices = c("4g", "8g", "16g"),
           selected = "8g"
         ),
-        helpText("💡 Don't choose more than the limit of your RAM. Recommended: use the maximum available RAM for better performance, as this process is demanding."),
+        helpText("💡 Don't choose more than the limit of your RAM."),
         
         actionButton(ns("start_tadcalling"), "🚀 Start TADcalling for ALL Chromosomes", class = "btn-primary"),
         

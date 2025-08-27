@@ -23,6 +23,13 @@ library(EnsDb.Hsapiens.v86)
 library(fs)
 library(purrr)
 
+# Libraries only for GVIZ module
+library(Gviz)
+library(IRanges)
+library(S4Vectors)
+library(GenomeInfoDb)
+library(BiocGenerics)
+
 
 # 2) Source your existing modules
 source("modules/01_loadData_Module.R")
@@ -313,16 +320,15 @@ server <- function(input, output, session) {
   #---------------------------------------------------------
   # --- Navigate to DMP Identification tab ---
   observeEvent(input$to_dmp, {
-    req(normalized_output(), dmr_results(), filter_results()) 
+    req(dmr_results(), filter_results()) 
     
     enable_tab("DMP Identification")
     updateNavbarPage(session, "main_tabs", selected = "DMP Identification")
     dmp_results_local <- dmp_Server(
       id = "dmp_module_id",
-      normalized_chosen_methylset = filter_results()$normalized_chosen_methylset,
+      filtered_data = filter_results()$filtered_data,
       pheno = dmr_results()$pheno,
       ref_group = dmr_results()$ref_group,
-      norm_method = filter_results()$norm_method_chosen,
       project_output_dir = reactive({ loaded_data$project_dir() })
     )
     dmp_results(dmp_results_local)
@@ -348,6 +354,17 @@ server <- function(input, output, session) {
       project_output_dir =  reactive({ loaded_data$project_dir() })
     )
     boxplot_results(boxplot_res_local)
+    # Add the debug observer:
+    observe({
+      tryCatch({
+        print("DEBUG: boxplot_results structure:")
+        print(str(boxplot_results()))
+        print("DEBUG: First few rows:")
+        print(head(boxplot_results()))
+      }, error = function(e) {
+        message("Debug observer error: ", e$message)
+      })
+    })
     shinyjs::enable("to_offtargets")
   })
   #----------------------------------------------------------
@@ -410,7 +427,8 @@ server <- function(input, output, session) {
   GvizPlotServer(
     id = "myGvizPlot",
     dmr_results = dmr_results,
-    annotation_results = boxplot_results,
+    dmp_results = dmp_results,
+    boxplot_results = boxplot_results,
     offtarget_table = offtargets_results,
     tadcalling_results = tadcalling_results,
     chr_size_df_global = chr_size_df_global,

@@ -33,16 +33,8 @@ dmp_UI <- function(id) {
           textOutput(ns("display_ref_group"))
         ),
         
-        # Normalization method display
-        div(
-          class = "mb-2",  # smaller margin below
-          HTML('<label class="control-label fw-semibold fs-7">Normalization Method:</label>'),
-          textOutput(ns("display_norm_method"))
-        ),
-        
-  
         helpText(
-          "Methylation differences calculated using the previously specified normalization method:",
+          "Methylation differences calculated:",
           list(
             div(strong("-"), "Hypomethylation relative to reference"),
             div(strong("+"), "Hypermethylation relative to reference")
@@ -105,7 +97,7 @@ dmp_UI <- function(id) {
 # ─────────────────────────────────────
 # SERVER FUNCTION 
 # ─────────────────────────────────────
-dmp_Server <- function(id, normalized_chosen_methylset, pheno, ref_group, norm_method, project_output_dir) {
+dmp_Server <- function(id,filtered_data , pheno, ref_group, project_output_dir) {
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
     
@@ -133,12 +125,7 @@ dmp_Server <- function(id, normalized_chosen_methylset, pheno, ref_group, norm_m
       req(ref_group())
       ref_group()
     })
-    #-----------------------------------
-    # Display the normalization method
-    output$display_norm_method <- renderText({
-      req(norm_method())
-      norm_method()
-    })
+  
     #-------------------------------------
     # Toggle notes section
     observeEvent(input$toggle_notes, {
@@ -164,7 +151,7 @@ dmp_Server <- function(id, normalized_chosen_methylset, pheno, ref_group, norm_m
       }
       
       timestamp <- format(Sys.time(), "%Y%m%d_%H%M%S")
-      filename <- paste0("DMP_results_", norm_method(), "_", timestamp, ".csv")
+      filename <- paste0("DMP_results_", timestamp, ".csv")
       filepath <- file.path(dmp_dir, filename)
       
       write.csv(results_table, filepath, row.names = TRUE)
@@ -177,7 +164,7 @@ dmp_Server <- function(id, normalized_chosen_methylset, pheno, ref_group, norm_m
       if (!dir.exists(intermediate_dir)) {
         dir.create(intermediate_dir, recursive = TRUE)
       }
-      filename <- paste0("DMP_results_", norm_method(), "_", last_qvalue, "qval.rds")
+      filename <- paste0("DMP_results_", last_qvalue, "qval.rds")
       filepath <- file.path(intermediate_dir, filename)
       
       saveRDS(list(
@@ -202,7 +189,7 @@ dmp_Server <- function(id, normalized_chosen_methylset, pheno, ref_group, norm_m
       
       # ----------------- Debugging Step 0: Input Validation -----------------
       append_message("Step 0: Validating inputs...\n")
-      req(normalized_chosen_methylset(), pheno(), ref_group(), norm_method(), project_output_dir())
+      req(filtered_data(), pheno(), ref_group(), project_output_dir())
       
       if (!dir.exists(project_output_dir())) {
         append_message(paste("Error: Project Directory", project_output_dir(), "does not exist. ❌ Analysis aborted.\n"))
@@ -210,20 +197,21 @@ dmp_Server <- function(id, normalized_chosen_methylset, pheno, ref_group, norm_m
       }
       
       withProgress(message = "DMP Analysis in Progress", value = 0, {
+        
         # --- Step 1: Access MethylSet ---
         incProgress(0.1, detail = "Accessing normalized data...")
-        append_message("Step 1: Accessing normalized methylset...")
+        append_message("Step 1: Accessing filtered data...")
         
         # NEW: More detailed methylset information
-        current_methylset <- normalized_chosen_methylset()
+        current_GenoRationSet <- filtered_data()
         # debugging
-        message(paste0("Methylset class: ", class(current_methylset)[1]))
-        message(paste0("Dimensions: ", paste(dim(current_methylset), collapse = " x ")))
-        message(paste0("First 3 samples: ", paste(sampleNames(current_methylset)[1:3], collapse = ", ")))
-        message(paste0("Number of probes: ", nrow(current_methylset)))
+        message(paste0("Methylset class: ", class(current_GenoRationSet)[1]))
+        message(paste0("Dimensions: ", paste(dim(current_GenoRationSet), collapse = " x ")))
+        message(paste0("First 3 samples: ", paste(sampleNames(current_GenoRationSet)[1:3], collapse = ", ")))
+        message(paste0("Number of probes: ", nrow(current_GenoRationSet)))
         
-        if (is.null(current_methylset)) {
-          append_message(paste0("Error: Normalisaed data for '", norm_method(), "' not found. ❌ Analysis aborted.\n"))
+        if (is.null(current_GenoRationSet)) {
+          append_message("Error: Filtered data not found. ❌ Analysis aborted.\n")
           return()
         }
         
@@ -233,7 +221,7 @@ dmp_Server <- function(id, normalized_chosen_methylset, pheno, ref_group, norm_m
         
         tryCatch({
           calculated_mean_diffs <- calculateMethylationMeanDifferences(
-            normalised_methylset = current_methylset,
+            GenoRationSet = current_GenoRationSet,
             pheno_table = pheno(),
             ref_group = ref_group(),
             round_digits = 5
@@ -254,16 +242,25 @@ dmp_Server <- function(id, normalized_chosen_methylset, pheno, ref_group, norm_m
         incProgress(0.4, detail = "Running dmpFinder...")
        append_message("Step 2: Running dmpFinder...\n")
         
-        print(paste("Data dimensions of dmpFinder input:", paste(dim(getM(current_methylset)), collapse = " x ")))
+        print(paste("Data dimensions of dmpFinder input:", paste(dim(getM(current_GenoRationSet)), collapse = " x ")))
         print(paste("Pheno vector length:", length(pheno()$Sample_Group)))
         
         tryCatch({
-          dmp_raw <- minfi::dmpFinder(
-            dat = getM(current_methylset),
-            pheno = pheno()$Sample_Group,
-            type = "categorical",
-            qCutoff = input$qvalue_cutoff,
-            shrinkVar = FALSE
+          # count samples from pheno
+          n_samples <- length(pheno()$Sample_Group)
+          
+          # set shrinkVar dynamically
+          shrink_flag <- if (n_samples < 10) TRUE else FALSE
+          
+          # run dmpFinder with chosen shrinkVar
+          dmp_raw <- suppressWarnings(
+            minfi::dmpFinder(
+              dat = getM(current_GenoRationSet),
+              pheno = pheno()$Sample_Group,
+              type = "categorical",
+              qCutoff = input$qvalue_cutoff, # change to 1 since the table is filterable
+              shrinkVar = shrink_flag
+            )
           )
           dmp_results_reactive(dmp_raw)
           print(paste("number of rows in dmpfinder original results table: ", nrow(dmp_raw)))
@@ -311,7 +308,7 @@ dmp_Server <- function(id, normalized_chosen_methylset, pheno, ref_group, norm_m
         })
     
         incProgress(0.2, detail = "Rendering table and preparing downloads... ")
-        output$dmp_table <- DT::renderDataTable({
+        output$dmp_table <- DT::renderDT({
           req(dmp_final_table())
           DT::datatable(dmp_final_table(),
                         options = list(
@@ -319,7 +316,8 @@ dmp_Server <- function(id, normalized_chosen_methylset, pheno, ref_group, norm_m
                           searching = TRUE,
                           scrollX = TRUE
                         ),
-                        rownames = TRUE
+                        rownames = TRUE,
+                        filter = "top"
           )
         })
       })
@@ -336,7 +334,7 @@ dmp_Server <- function(id, normalized_chosen_methylset, pheno, ref_group, norm_m
         append_message(paste0("📁 Saved intermediate results to: ", rds_path, "\n"))
       }
     })
-    
+    #-----------------------------------------------------
     # NEW: Render the DMP table based on the dmp_final_table reactive value
     observe({
       dmp_final_table()
@@ -353,7 +351,7 @@ dmp_Server <- function(id, normalized_chosen_methylset, pheno, ref_group, norm_m
         )
       })  
     })
-    
+    #-------------------------------------
     # Download handler
     output$download_dmp <- downloadHandler(
       filename = function() {
@@ -367,7 +365,7 @@ dmp_Server <- function(id, normalized_chosen_methylset, pheno, ref_group, norm_m
         }
       }
     )
-    
+    #-------------------------------------
     # Return the final DMP table as a module output
     # Modify the return statement to always return the q-value, even when no DMPs are found
     return(list(
@@ -390,7 +388,7 @@ dmp_Server <- function(id, normalized_chosen_methylset, pheno, ref_group, norm_m
 }
 
 
-'# test module
+'# test module this test dont work after the last modification but the module works in the main app
 # app.R
 
 # Load required libraries
@@ -405,10 +403,10 @@ library(purrr)
 
 # --- Define fixed variables and source files ---
 # These are loaded once when the app starts.
-dir <- "C:/Users/ghaza/Documents/ghazal/Bioinformatik_Fächer/Masterarbeit_Project/Scripts/R_Scripts/modules/main_app_tests/box_pheno_pass/intermediate_data/Five_objects_normalised_data.rds"
+dir <- "C:/Users/ghaza/Documents/ghazal/Bioinformatik_Fächer/Masterarbeit_Project/Scripts/R_Scripts/modules/main_app_tests/box_pheno_pass/intermediate_data/filtered_GRset_SWAN_SNPsremoved_SexChrProbes_kept_20250804.rds"
 message("Attempting to load data from: ", dir)
 tryCatch({
-  methylsets <- readRDS(dir)
+  GenoRationSet <- readRDS(dir)
   message("Data loaded successfully.")
 }, error = function(e) {
   stop("Error loading RDS file: ", e$message)
@@ -416,7 +414,7 @@ tryCatch({
 
 
 # Extract pheno data and set reference group
-pheno_table <- pData(methylsets$SWAN)
+pheno_table <- pData(GenoRationSet)
 ref_group <- "unguided"
 project_path <- "./main_app_tests/box_pheno_pass"
 
@@ -439,21 +437,20 @@ server <- function(input, output, session) {
   message("Server function has started.")
   
   # Solution 1: List of functions
-  normalisation_results_r <- reactive({methylsets$SWAN  })
+  filtered_data_r <- reactive({GenoRationSet})
   
   # Other reactives remain the same
   pheno_r <- reactive(pheno_table)
   project_output_dir_r <- reactive(project_path)
   ref_group_r <- reactive(ref_group)
-  norm_method_r <- reactiveVal("SWAN") 
-  
+
   # Call module
   dmp_Server("dmp",
-             normalized_chosen_methylset = normalisation_results_r,
+             filtered_data = filtered_data_r,
              pheno = pheno_r,
              project_output_dir = project_output_dir_r,
-             ref_group = ref_group_r,
-             norm_method = norm_method_r)
+             ref_group = ref_group_r
+             )
 }
 
 # --- Run the application ---

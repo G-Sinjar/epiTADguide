@@ -117,7 +117,6 @@ filter_data_server <- function(id, RGset, raw_normalised, normalized_all_methods
   moduleServer(id, function(input, output, session) {
     shinyjs::useShinyjs()
     
-    
     # Reactive containers for status, data tables, filtered object
     status <- reactiveVal("Waiting to start...")
     stats_data <- reactiveVal(NULL)
@@ -133,7 +132,7 @@ filter_data_server <- function(id, RGset, raw_normalised, normalized_all_methods
     
     # Disable the save button by default using shinyjs
     shinyjs::disable("save_grset_rds")
-    
+    #------------------------------------
     # Display current filtering status
     output$filter_status <- renderText({
       status()
@@ -159,10 +158,8 @@ filter_data_server <- function(id, RGset, raw_normalised, normalized_all_methods
       filtered_grset(NULL) 
       
       withProgress(message = "Running Filtering Steps...", value = 0, {
-        status("Step 1: Filtering CpGs reliable in all samples (p-value > 0.01)")
-        incProgress(0.1, detail = "Step 1: Detection P-Values")
-        
-        # Clear previous results
+        status("Step 0: Getting normalised data...")
+        incProgress(0.1, detail = "Step 0: Getting normalised data...")        
         stats_data(NULL)
         beta_table(NULL)
         mval_table(NULL)
@@ -180,23 +177,74 @@ filter_data_server <- function(id, RGset, raw_normalised, normalized_all_methods
         
         raw_n_initial <- nrow(raw_normalised()) 
         normalized_data_to_filter <- current_normalized_data_value
+        normalised_n <- nrow(normalized_data_to_filter)
+        #--------------------------
+        # add predict sex here from getSex(mapToGenome(current_normalized_data_value))
+        # Step 1: Sex Prediction
+        incProgress(0.2, detail = "Step 1: Predicting Sex")
+        status(paste(status(), "\nStep 1: Predicting sample sex"))
         
+        # Conditional sex prediction
+        predictedSex <- tryCatch({
+          if (inherits(normalized_data_to_filter, "GenomicRatioSet")) {
+            # If already a GenomicRatioSet, no need to mapToGenome
+            suppressWarnings(getSex(normalized_data_to_filter, cutoff = -2))
+          } else {
+            # If not, map to genome first
+            suppressWarnings(getSex(mapToGenome(normalized_data_to_filter), cutoff = -2))
+          }
+        }, error = function(e) {
+          status(paste(status(), "\n❌ Error in sex prediction:", e$message))
+          return(NULL)
+        })
         
-        # Step 1: Detection P-value filter
+        if (is.null(predictedSex)) return()
+        
+        message(paste0("predicting sex number of rows: ", nrow(predictedSex)))
+        message(paste0("predicting sex rows: ", rownames(predictedSex)))
+        
+        # Add sex information to the normalized_data_to_filter object
+        normalized_data_to_filter <- tryCatch({
+          addSex(normalized_data_to_filter, sex = predictedSex)
+        }, error = function(e) {
+          status(paste(status(), "\n❌ Error adding sex information:", e$message))
+          return(NULL)
+        })
+        
+        # Create a robust sex_table for display
+        sex_table <- data.frame(
+          Sample = rownames(predictedSex),
+          Predicted_Sex = predictedSex$predictedSex,
+          stringsAsFactors = FALSE
+        )
+        
+        status(paste(status(), "\n✅ Step 1 is done."))
+        
+        status(paste(
+          status(),
+          "\n📌 Predicted Sex:\n",
+          paste(capture.output(print(sex_table, row.names = FALSE)), collapse = "\n")
+        ))
+        #---------------------------
+        
+        # Step 2: Filtering CpGs reliable in all samples
+        status(paste(status(), "\nStep 2: Filtering CpGs reliable in all samples (p-value > 0.01)"))
+        incProgress(0.3, detail = "Step 2: Detection P-Values")
         filtered_by_detectionP <- tryCatch({
           filter_by_detectionP(normalized_data_to_filter, RGset = RGset()) 
         }, error = function(e) {
-          status(paste(status(), "\n❌ Error in Step 1:", e$message))
+          status(paste(status(), "\n❌ Error in Step 2:", e$message))
           return(NULL)
         })
         if (is.null(filtered_by_detectionP)) return()
-        status(paste(status(), "\n✅ Step 1 is done."))
+        status(paste(status(), "\n✅ Step 2 is done."))
         reliable_n <- nrow(filtered_by_detectionP)
         
-        
-        # Step 2: Map to genome
-        incProgress(0.2, detail = "Step 2: Mapping to Genome")
-        status(paste(status(), "\nStep 2: Mapping to genome"))
+        #-------------------
+        # Step 3: Map to genome
+        incProgress(0.4, detail = "Step 3: Mapping to Genome")
+        status(paste(status(), "\nStep 3: Mapping to genome"))
+        message("mapping to genome")
         if (inherits(normalized_data_to_filter, "GenomicRatioSet")) {
           mapped <- filtered_by_detectionP
           mapped_n <- nrow(filtered_by_detectionP)
@@ -204,64 +252,98 @@ filter_data_server <- function(id, RGset, raw_normalised, normalized_all_methods
           mapped <- tryCatch({
             mapToGenome(filtered_by_detectionP)
           }, error = function(e) {
-            status(paste(status(), "\n❌ Error in Step 2:", e$message))
+            status(paste(status(), "\n❌ Error in Step 3:", e$message))
             return(NULL)
           })
           if (is.null(mapped)) return()
           mapped_n <- nrow(mapped)
         }
-        status(paste(status(), "\n✅ Step 2 is done."))
-        
-        
-        # Step 3: SNP Removal
-        incProgress(0.3, detail = "Step 3: SNP Removal")
+        message(paste0("number after mapping",mapped_n))
+        status(paste(status(), "\n✅ Step 3 is done."))
+        #--------------------------
+        # Enhanced unmapped+ unreliable probes check (13.08)
+        tryCatch({
+          # Get raw data rownames (handle both function and object cases)
+          raw_names <- tryCatch(
+            rownames(raw_normalised()),
+            error = function(e) rownames(raw_normalised())
+          )  
+          
+          unmapped <- setdiff(raw_names, rownames(mapped))
+          unmapped_probes <- data.frame(
+            Probe_ID = unmapped,
+            Type = ifelse(grepl("^rs", unmapped), "dbSNP probes",
+                          ifelse(grepl("^ch", unmapped), "Cp<nonG base> probes",
+                                 ifelse(grepl("^nv", unmapped), "nucleotide variant probes",
+                                        "True CpGs"))
+          ))
+          
+          # Create summary table
+          summary_table <- data.frame(
+            Category = c("dbSNP probes", "Cp<nonG base> probes", "True CpGs", "nucleotide variant probes"),
+            Count = c(sum(grepl("^rs", unmapped)),
+                      sum(grepl("^ch", unmapped)),
+                      sum(grepl("^cg", unmapped)),
+                      sum(grepl("^nv", unmapped)))
+          )
+          
+          # Save to Excel with two sheets
+          if (length(unmapped) > 0) {
+            output_file <- file.path(project_output_dir(), paste0("dropped_", input$norm_method,"_normalised_unmapped_probes_byFiltering_step1+2.xlsx"))
+            writexl::write_xlsx(
+              list("Unmapped_Probes" = unmapped_probes, 
+                   "Summary" = summary_table),
+              path = output_file
+            )
+            status(paste0(
+              status(), "\nℹ️ To check removed (unreliable + unmapped) probes see this table: ", output_file ))
+          } else {
+            status(paste(status(), "\nℹ️ No probes were unmapped during genome mapping"))
+          }
+        }, error = function(e) {
+          status(paste(status(), "\n⚠️ Could not analyze unmapped probes:", e$message))
+        })
+        #--------------------------------------
+        # Step 4: SNP Removal
+        incProgress(0.5, detail = "Step 4: SNP Removal")
         if (isTRUE(input$remove_snps)) {
-          status(paste(status(), "\nStep 3: Removing SNPs"))
+          status(paste(status(), "\nStep 4: Removing SNPs"))
+          message("REMOVING snpS")
           ratio_geno <- tryCatch({
             temp <- dropLociWithSnps(mapped, snps = c("SBE", "CpG"), maf = 0)
             temp <- addSnpInfo(temp)
             temp
           }, error = function(e) {
-            status(paste(status(), "\n❌ Error in Step 3:", e$message))
-            return(NULL)
-          })
-          if (is.null(ratio_geno)) return()
-        } else {
-          status(paste(status(), "\nStep 3: Skipping SNP removal"))
-          ratio_geno <- addSnpInfo(mapped)
-        }
-        after_snp_n <- nrow(ratio_geno)
-        status(paste(status(), "\n✅ Step 3 is done."))
-        
-        
-        # Step 4: Ratio Conversion
-        incProgress(0.5, detail = "Step 4: Ratio Conversion")
-        status(paste(status(), "\nStep 4: Getting Beta and M values"))
-        if (!inherits(ratio_geno, "GenomicRatioSet")) {
-          ratio_geno <- tryCatch({
-            ratioConvert(ratio_geno, what = "both", keepCN = TRUE)
-          }, error = function(e) {
             status(paste(status(), "\n❌ Error in Step 4:", e$message))
             return(NULL)
           })
           if (is.null(ratio_geno)) return()
+        } else {
+          status(paste(status(), "\nStep 4: Skipping SNP removal"))
+          ratio_geno <- addSnpInfo(mapped)
         }
+        after_snp_n <- nrow(ratio_geno)
         status(paste(status(), "\n✅ Step 4 is done."))
-        
-        
-        # Step 5: Sex Prediction
-        incProgress(0.7, detail = "Step 5: Predicting Sex")
-        status(paste(status(), "\nStep 5: Predicting sample sex"))
-        predictedSex <- suppressWarnings(getSex(ratio_geno, cutoff = -2))
-        ratio_geno <- addSex(ratio_geno, sex = predictedSex)
+        message(paste0("number after snps removal",after_snp_n))
+        #--------------------------
+        # Step 5: Ratio Conversion
+        incProgress(0.6, detail = "Step 5: Ratio Conversion")
+        message("converting to ration geno")
+        status(paste(status(), "\nStep 5: Getting Beta and M values"))
+        if (!inherits(ratio_geno, "GenomicRatioSet")) {
+          ratio_geno <- tryCatch({
+            ratioConvert(ratio_geno, what = "both", keepCN = TRUE)
+          }, error = function(e) {
+            status(paste(status(), "\n❌ Error in Step 5:", e$message))
+            return(NULL)
+          })
+          if (is.null(ratio_geno)) return()
+        }
         status(paste(status(), "\n✅ Step 5 is done."))
         
-        sex_table <- data.frame(Sample = rownames(predictedSex), Predicted_Sex = predictedSex$predictedSex)
-        status(paste(status(), "\n📌 Predicted Sex:\n", paste(capture.output(print(sex_table, row.names = FALSE)), collapse = "\n")))
-        
-        
+        #-----------------------------
         # Step 6: Remove sex chromosome probes
-        incProgress(0.9, detail = "Step 6: Removing Sex Chromosome Probes")
+        incProgress(0.7, detail = "Step 6: Removing Sex Chromosome Probes")
         remove_chrs <- input$remove_sex_chr
         if (length(remove_chrs) > 0) {
           status(paste(status(), "\nStep 6: Removing probes on:", paste(remove_chrs, collapse = ", ")))
@@ -277,18 +359,18 @@ filter_data_server <- function(id, RGset, raw_normalised, normalized_all_methods
         status(paste(status(), "\n✅ Filtering is done!"))
         
         stats <- data.frame(
-          "Number of CpGs" = c(raw_n_initial, reliable_n, mapped_n, after_snp_n, after_sexchr_n),
+          "Number of CpGs" = c(raw_n_initial, normalised_n ,reliable_n, mapped_n, after_snp_n, after_sexchr_n),
           "Percentage from raw" = round(c(
             100,
-            reliable_n / raw_n_initial * 100,
-            mapped_n / raw_n_initial * 100,
-            after_snp_n / raw_n_initial * 100,
+            normalised_n       / raw_n_initial * 100,
+            reliable_n        / raw_n_initial * 100,
+            mapped_n         / raw_n_initial * 100,
+            after_snp_n     / raw_n_initial * 100,
             after_sexchr_n / raw_n_initial * 100
           ), 2)
         )
-        rownames(stats) <- c("Raw", "Reliable", "Mapped", "Post-SNP", "Post-SexChr")
+        rownames(stats) <- c("Raw", "normalised","Reliable", "Mapped", "Post-SNP", "Post-SexChr")
         stats_data(stats)
-        
         
         # Get the beta values
         beta_values <- getBeta(ratio_geno)
@@ -477,13 +559,14 @@ ui <- page_navbar(
 server <- function(input, output, session) {
   # Load your data first
   # Ensure these paths are correct for your environment
-  all_normalized_methods_data <- readRDS("C:/Users/ghaza/Documents/ghazal/Bioinformatik_Fächer/Masterarbeit_Project/Scripts/R_Scripts/intermediate_data/normalised_all_methods.rds")
-  preprocessed_data_object <- readRDS("C:/Users/ghaza/Documents/ghazal/Bioinformatik_Fächer/Masterarbeit_Project/Scripts/R_Scripts/intermediate_data/preprocessed_data.rds")
+  message("reading rds data")
+  all_normalized_methods_data <- readRDS("C:/Users/ghaza/Documents/ghazal/Bioinformatik_Fächer/Masterarbeit_Project/Scripts/R_Scripts/main_app_tests/try5/intermediate_data/Six_objects_normalised_data.rds")
+  rgset_data_object <- readRDS("C:/Users/ghaza/Documents/ghazal/Bioinformatik_Fächer/Masterarbeit_Project/Scripts/R_Scripts/main_app_tests/try5/intermediate_data/RGset.rds")
   project_base_path <- "./main_app_tests"
-  
+  message("finished reading.")
   # Create reactive expressions for each required input of the module
-  reactive_RGset <- reactive({ preprocessed_data_object$RGset })
-  reactive_raw_normalised <- reactive({ preprocessed_data_object$raw_normalised })
+  reactive_RGset <- reactive({ rgset_data_object })
+  reactive_raw_normalised <- reactive({ all_normalized_methods_data$Raw })
   reactive_project_output_dir <- reactive({ project_base_path })
   
   

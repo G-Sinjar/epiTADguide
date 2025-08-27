@@ -208,14 +208,14 @@ reshape_to_long_beta <- function(region_cpgs, pheno_data) {
 }
 
 
-#test function
-'# input from privious function
+'#test function
+# input from privious function
 long_dmr1 <-  reshape_to_long_beta(region_cpgs= cpgs_inDMR1, pheno_data =results_dmr$pheno_data) 
 dim(long_dmr1) #80  7
 View(long_dmr1)
 # case 2: no qval
-long_DMR1_noq <- reshape_to_long_beta(region_cpgs= cpgs_inDMR1_noq, pheno_data =results_dmr$pheno_data)
-View(long_DMR1_noq)'
+#long_DMR1_noq <- reshape_to_long_beta(region_cpgs= cpgs_inDMR1_noq, pheno_data =results_dmr$pheno_data)
+#View(long_DMR1_noq)'
 # ----------------------------------------------------------------------
 # 3. Create boxplot of beta values across groups and CpGs
 # ----------------------------------------------------------------------
@@ -331,12 +331,12 @@ create_boxplot <- function(
       p <- p + geom_boxplot(
         aes(group = group_pos, color = significance_last_qvalue),
         outlier.shape = NA,
-        lwd = 0.5,
+        lwd = 0.55,
         position = pos_dodge
       ) +
         scale_color_manual(
           name = "Significance",
-          values = c("Sig" = "green3", "Insig" = "black"),
+          values = c("Sig" = "red", "Insig" = "black"),
           labels = c("Sig" = "Significant", "Insig" = "Non-significant")
         )
     } else {
@@ -353,12 +353,12 @@ create_boxplot <- function(
       p <- p + geom_boxplot(
         aes(color = significance_last_qvalue),
         outlier.shape = NA,
-        lwd = 0.5,
+        lwd = 0.55,
         position = pos_dodge
       ) +
         scale_color_manual(
           name = "Significance",
-          values = c("Sig" = "green3", "Insig" = "black"),
+          values = c("Sig" = "red", "Insig" = "black"),
           labels = c("Sig" = "Significant", "Insig" = "Non-significant")
         )
     } else {
@@ -411,19 +411,19 @@ create_boxplot <- function(
 '# test function
 
 # make a cpg significant to color in green
-long_dmr1_manipulated <- long_dmr1 %>%
-  mutate(significance_last_qvalue = ifelse(row_number() <= 8, "Sig", "Insig"))
+#long_dmr1_manipulated <- long_dmr1 %>%
+#  mutate(significance_last_qvalue = ifelse(row_number() <= 8, "Sig", "Insig"))
 
 #View(long_dmr1_manipulated)
 create_boxplot(
   long_format_table =long_dmr1_manipulated, 
   interactive =FALSE, 
-  use_positional_spacing = TRUE,
+  use_positional_spacing = FALSE,
   ref_group = "unguided")
 # case 2 : no qval column
-create_boxplot(
-  long_format_table =long_DMR1_noq, 
-  interactive =FALSE, 
-  use_positional_spacing = TRUE,
-  ref_group = "unguided")
+#create_boxplot(
+#  long_format_table =long_DMR1_noq, 
+#  interactive =FALSE, 
+#  use_positional_spacing = TRUE,
+#  ref_group = "unguided")
 '

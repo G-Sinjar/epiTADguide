@@ -141,7 +141,7 @@ norm_server <- function(id, RGset, raw_normalised, targets, project_output_dir) 
         incProgress(0, detail = "Starting Quantile normalization...")
         Quantile_normalised_res(
           tryCatch({
-            minfi::preprocessQuantile(RGset(), fixOutliers = TRUE, removeBadSamples = FALSE,
+            minfi::preprocessQuantile(RGset(), fixOutliers = TRUE, removeBadSamples = TRUE,
                                       badSampleCutoff = 10.5, quantileNormalize = TRUE,
                                       stratified = TRUE, mergeManifest = FALSE, sex = NULL)
           }, error = function(e) {

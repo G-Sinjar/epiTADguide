@@ -19,7 +19,7 @@ qcUI <- function(id) {
       radioButtons(ns("qc_plot"), "Select QC Plot:",
                    choices = list(
                      "Plot 1: Channel Intensity" = "plot1",
-                     "Plot 2: Sample-specific QC" = "plot2",
+                     "Plot 2: Medien Intensity (Sample-specific)" = "plot2",
                      "Plot 3: Multi-dimensional scaling (MDS) plot" = "plot3",
                      "Plot 4: Beta value densities of the samples" = "plot4",
                      "Plot 5: Bean plot of Beta values densities" = "plot5"
@@ -60,7 +60,7 @@ qcServer <- function(id, RGset, raw_normalised, targets, project_output_dir) {
              
              # Plot 2: sample-specific QC
              "plot2" = tagList(
-               h3("sample-specific QC"),
+               h3("Medien Intensity (Sample-specific)"),
                helpText("	This is a simple quality control plot that uses the log median intensity in both the methylated (M) and unmethylated (U) channels. When plotting these two medians against each other, it has been observed that good samples cluster together, while failed samples tend to separate and have lower median intensities."),
                plotOutput(ns("plot2"), height = "100vh")
              ),
@@ -95,14 +95,14 @@ qcServer <- function(id, RGset, raw_normalised, targets, project_output_dir) {
       # Wrap the plotting code in withProgress
       withProgress(message = 'Generating Channel Intensity Plot...', value = 0, {
         incProgress(0.1, detail = "Processing data for plot")
-        plot(density(as.vector(assay(RGset(), "Red"))), main = "Channel Intensities", lwd = 2)
+        plot(density(as.vector(assay(RGset(), "Red"))), main = "Channel Intensities", col= "red" ,lwd = 2)
         lines(density(as.vector(assay(RGset(), "Green"))), col = "green", lwd = 2)
-        legend("topright", legend = c("Red Channel", "Green Channel"), col = c("black", "green"), lwd = 2)
+        legend("topright", legend = c("Red Channel", "Green Channel"), col = c("red", "green"), lwd = 2)
         incProgress(1, detail = "Plot ready")
       })
     })
     
-    # Plot 2: sample-specific QC
+    # Plot 2: sample-specific QC: median-intensity QC
     output$plot2 <- renderPlot({
       req(raw_normalised())
       withProgress(message = 'Generating Sample Reliability Plot...', value = 0, {
@@ -148,6 +148,7 @@ qcServer <- function(id, RGset, raw_normalised, targets, project_output_dir) {
       })
     })
     
+    #---------------------------------------------
     output$download_current_plot <- downloadHandler(
       filename = function() {
         
@@ -190,7 +191,7 @@ qcServer <- function(id, RGset, raw_normalised, targets, project_output_dir) {
         }
       }
     )
-    
+    #-------------------------------------------
     # Download Handler for QC report
     output$download_qc_report <- downloadHandler(
       filename = function() {

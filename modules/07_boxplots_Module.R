@@ -15,11 +15,12 @@ boxplotUI <- function(id) {
       switchInput(ns("interactive"), "Interactive Boxplot", value = FALSE),
       switchInput(ns("pos_spacing"), "Use Positional Spacing", value = FALSE),
       helpText("Positional spacing will arrange the boxes according to their position on the chromosome, whereas PositionLabel will just use the CpG names."),
-      actionButton(ns("create_plot"), "Create Boxplot"),
       br(),
       h5("Q-value Cutoff:"),
       verbatimTextOutput(ns("qval_cutoff")),
-      br(),
+      helpText("All CpG sites with a q-value less than or equal to the threshold q-value indicated above, their box's border will be highlighted in green."),
+      actionButton(ns("create_plot"), "Create Boxplot"),
+      hr(),
       downloadButton(ns("download_plot"), "Download Plot")
     ),
     
@@ -118,13 +119,27 @@ boxplotServer <- function(id, dmr_output_reactive, annotation_tbl_reactive, dmp_
     annotated_with_qval_r <- reactive({
       req(annotated_with_betas_df_r())
       
+      # Debug 1: Print initial state
+      print("DEBUG: Starting annotated_with_qval_r reactive")
+      print(paste("DEBUG: annotated_with_betas_df_r() class:", class(annotated_with_betas_df_r())))
+      print(paste("DEBUG: annotated_with_betas_df_r() dim:", 
+                  if(is.data.frame(annotated_with_betas_df_r())) 
+                    paste(dim(annotated_with_betas_df_r()), collapse="x") 
+                  else "Not a data frame"))
+      
       status_lines <- c("Merging q-values with annotation table...")
       status_message(paste(status_lines, collapse = "\n"))
       
       tryCatch({
+        # Debug 2: Print inputs
         annot_table <- annotated_with_betas_df_r()
-        dmp_table <- dmp_table_r()  # This now safely returns NULL if empty
+        dmp_table <- dmp_table_r()
         last_q_val <- last_qvalue_r()
+        
+        print("DEBUG: Input values:")
+        print(paste("dmp_table_r() class:", class(dmp_table)))
+        print(paste("dmp_table_r() length:", length(dmp_table)))
+        print(paste("last_qvalue_r():", last_q_val))
         
         # Input validation
         validate(
@@ -134,6 +149,9 @@ boxplotServer <- function(id, dmr_output_reactive, annotation_tbl_reactive, dmp_
         )
         
         if (is.null(dmp_table) || nrow(dmp_table) == 0) {
+          # Debug 3: No DMPs case
+          print("DEBUG: No DMP table or empty DMP table")
+          
           status_lines <- c(
             status_lines,
             paste0("⚠️ No significant DMPs found at q <= ", sprintf("%.5f", as.numeric(last_q_val))),
@@ -143,16 +161,27 @@ boxplotServer <- function(id, dmr_output_reactive, annotation_tbl_reactive, dmp_
           )
           status_message(paste(status_lines, collapse = "\n"))
           
-          # The return for this block is added here
+          # Debug 4: Print return value
+          print("DEBUG: Returning annotation table without q-values")
+          print(str(annot_table))
+          
           return(annot_table) 
         } else {
-          # All the merging logic is now correctly placed within this else statement
-          validate(
-            need(is.data.frame(dmp_table), "DMP table is not a data frame"))
+          # Debug 5: DMPs available case
+          print("DEBUG: Processing DMP table")
+          print(paste("DMP table dimensions:", nrow(dmp_table), "x", ncol(dmp_table)))
+          print("First few rows of DMP table:")
+          print(head(dmp_table))
+          
+          validate(need(is.data.frame(dmp_table), "DMP table is not a data frame"))
           
           last_q_val_num <- as.numeric(last_q_val)
           qval_vector <- dmp_table$qval
           names(qval_vector) <- rownames(dmp_table)
+          
+          # Debug 6: Check q-value vector
+          print("DEBUG: Q-value vector summary:")
+          print(summary(qval_vector))
           
           annot_table$qval <- qval_vector[rownames(annot_table)]
           annot_table$significance_last_qvalue <- ifelse(
@@ -161,7 +190,11 @@ boxplotServer <- function(id, dmr_output_reactive, annotation_tbl_reactive, dmp_
             "Sig"
           )
           
-          # Final status update
+          # Debug 7: Check merged result
+          print("DEBUG: Merged table summary:")
+          print(summary(annot_table$qval))
+          print(paste("Significant probes:", sum(annot_table$significance_last_qvalue == "Sig")))
+          
           status_lines <- c(
             status_lines,
             "✅ Successfully merged q-values",
@@ -170,11 +203,16 @@ boxplotServer <- function(id, dmr_output_reactive, annotation_tbl_reactive, dmp_
           )
           status_message(paste(status_lines, collapse = "\n"))
           
-          # The return for this block is correctly here as well
+          # Debug 8: Final output
+          print("DEBUG: Final merged table structure:")
+          print(str(annot_table))
+          
           return(annot_table)
         }
         
       }, error = function(e) {
+        # Debug 9: Error case
+        print(paste("DEBUG: Error in annotated_with_qval_r:", e$message))
         error_msg <- paste0("❌ Merging failed: ", e$message)
         status_lines <<- c(status_lines, error_msg)
         status_message(paste(status_lines, collapse = "\n"))
@@ -366,16 +404,11 @@ boxplotServer <- function(id, dmr_output_reactive, annotation_tbl_reactive, dmp_
         status_message(paste(status_lines, collapse = "\n"))
       }) # End of withProgress
     })
+    return(annotated_with_qval_r())
   })
-  return(reactive({
-    list(
-      annotated_table_with_qval = annotated_with_qval_r()
-    )
-  }))
 }
 
-
-'#test app
+'#test app dont work cause of the error in the return statement eventhough this works in the main app. this test code works only wheen the return done have paranthese return(annotated_with_qval_r) which doesnt work in main app
 # Load libraries
 library(shiny)
 library(bslib)
@@ -390,34 +423,7 @@ source("../utils/dmrs_boxplot_utils.R")
 results_dmr <- readRDS("./main_app_tests/box_pheno_pass/DMR_results/DMRs_unguided_vs_sample_groupguided_cutoff_-0.15_0.15_B0_20250804.rds")
 results_anno <- readRDS("./main_app_tests/intermediate_data/annotated_object_20250808.rds")
 dmp_results <- readRDS("./main_app_tests/dmp_qval_test/intermediate_data/DMP_results_SWAN_0.89999qval.rds")
-# Wrap each element in reactiveVal(), and return a list of reactive functions
-dmr_output_reactive <- reactive({
-  list(
-    dmr_table = reactiveVal(results_dmr$dmr_table),
-    pheno = reactiveVal(results_dmr$pheno),
-    ref_group = reactiveVal("unguided")
-  )
-})
 
-annotation_tbl_reactive <- reactive({
-  list(
-    annotated_table = reactiveVal(results_anno$annotated_table)
-  )
-})
-
-#dmp_results_reactive <- reactive({
-#  list(
-#    DMP_tbl = reactiveVal(dmp_results$dmp_table),
-#    last_qvalue = reactiveVal(dmp_results$last_qvalue)
-#  )
-#})
-#case 2: null
-dmp_results_reactive <- reactive({
-  list(
-    DMP_tbl = reactiveVal(NULL),
-    last_qvalue = reactiveVal(dmp_results$last_qvalue)
-  )
-})
 # ---- UI ----
 ui <- page_navbar(
   title = "DMR Boxplot Test App",
@@ -427,6 +433,34 @@ ui <- page_navbar(
 
 # ---- Server ----
 server <- function(input, output, session) {
+  # Wrap each element in reactiveVal(), and return a list of reactive functions
+  dmr_output_reactive <- reactive({
+    list(
+      dmr_table = reactiveVal(results_dmr$dmr_table),
+      pheno = reactiveVal(results_dmr$pheno),
+      ref_group = reactiveVal("unguided")
+    )
+  })
+  
+  annotation_tbl_reactive <- reactive({
+    list(
+      annotated_table = reactiveVal(results_anno$annotated_table)
+    )
+  })
+  
+  dmp_results_reactive <- reactive({
+    list(
+      DMP_tbl = reactiveVal(dmp_results$dmp_table),
+      last_qvalue = reactiveVal(dmp_results$last_qvalue)
+    )
+  })
+  #case 2: null
+  #dmp_results_reactive <- reactive({
+  #  list(
+  #    DMP_tbl = reactiveVal(NULL),
+  #    last_qvalue = reactiveVal(dmp_results$last_qvalue)
+  #  )
+  #})
   boxplotServer(
     id = "boxplot",
     dmr_output_reactive = dmr_output_reactive,

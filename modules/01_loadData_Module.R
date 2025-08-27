@@ -59,30 +59,33 @@ loadDataServer <- function(id) {
   moduleServer(id, function(input, output, session) {
     ns <- session$ns 
     
-    # Reactive string to store and update the step-by-step status messages
-    status_log <- reactiveVal("Waiting for user to set project name and output path...")
-    
-    # Append new message to current status text
+    # -----------functions-------------
+    # 1. append_status function: Append new message to current status text
     append_status <- function(new_message) {
       current <- status_log()
       updated <- paste(current, new_message, sep = "\n")
       status_log(updated)
     }
     
+    #--------------------------------------------------------
+    # ---------initial status---------
+    # Reactive string to store and update the step-by-step status messages
+    status_log <- reactiveVal("Waiting for user to set project name and output path...")
+    
     # Render status text in UI
     output$status <- renderText({ status_log() })
     
-    #-----------------------------------------------
-    # Reactive values for results
+    #--------------------------------------------------
+    #------------ reactive values----------
+    # 1. Reactive values for results
     RGset <- reactiveVal(NULL)
     raw_normalised <- reactiveVal(NULL)
     targets <- reactiveVal(NULL)
     
-    # Reactive value for the FINAL project output directory (base + project_name)
+    # 2. Reactive value for the FINAL project output directory (base + project_name)
     project_output_dir <- reactiveVal(NULL)
     
-    #--------------------------------------------------------
-    # Reactive value to control visibility of other sidebar elements
+    #3. Boolean Reactive value to control visibility of other sidebar elements
     raw_data_input_visible <- reactiveVal(FALSE)
     
     # Render conditional UI elements
@@ -105,6 +108,8 @@ loadDataServer <- function(id) {
       }
     })
     
+    #----------------------------------------------------------------
+    # -----------check and set project path unit----------
     # Observe "Check and Set Path" button for project output directory
     observeEvent(input$check_set_project_path_btn, {
       if (is.null(input$project_name) || nchar(input$project_name) == 0 ||
@@ -184,22 +189,25 @@ loadDataServer <- function(id) {
       }
     })
     
-    # Observe when "Load Data" button is clicked (for raw data)
+    #---------------------------------------------------------------------
+    # ------------ Load raw data unit ------------------
+    #Observe when "Load Data" button is clicked (for raw data)
     observeEvent(input$load_btn, {
       
+      # a. rest values
       RGset(NULL)
       raw_normalised(NULL)
       targets(NULL)
       
-      # Reset and start new status log
+      # b. Reset and start new status log
       status_log(paste0("Step 1: Validating raw data path: ", input$manual_path, "..."))
       
+      #-----------------------
       req(input$manual_path, project_output_dir())
-      
       RawDataDir <- gsub("\\\\", "/", input$manual_path)
       
       withProgress(message = 'Loading data...', value = 0, {
-        
+  
         # Step 1: Validate Raw Data Path
         if (!dir.exists(RawDataDir)) {
           append_status(paste0("❌ Path does not exist: ", RawDataDir))
@@ -359,6 +367,7 @@ loadDataServer <- function(id) {
       
     }) # Closes observeEvent(input$load_btn, { ... })
     
+    #-----------------------------------------------------------
     # Return a list of reactive values, including the new project_output_dir
     return(list(
       RGset = RGset,

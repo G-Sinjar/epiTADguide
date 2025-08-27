@@ -4,13 +4,13 @@
 # Funtion 1 -------------------------------------------------------------------------
 #' Calculate mean differences for Beta and M values between two groups.
 #' # PS. M_mean_difference is the fold change that can be used to volcano-plot
-calculateMethylationMeanDifferences <- function(normalised_methylset, pheno_table, ref_group, round_digits = 5) {
+calculateMethylationMeanDifferences <- function(GenoRationSet, pheno_table, ref_group, round_digits = 5) {
   
   # 1. Get Beta and M values using tryCatch for robust error handling
   beta_values <- tryCatch({
     # Attempt to get Beta values. This assumes 'getBeta' is available
-    # and compatible with 'normalised_methylset' (e.g., from 'minfi').
-    getBeta(normalised_methylset)
+    # and compatible with 'GenoRationSet' (e.g., from 'minfi').
+    getBeta(GenoRationSet)
   }, error = function(e) {
     message("Error getting Beta values: ", e$message)
     return(NULL) # Return NULL on error
@@ -18,8 +18,8 @@ calculateMethylationMeanDifferences <- function(normalised_methylset, pheno_tabl
   
   M_values <- tryCatch({
     # Attempt to get M values. This assumes 'getM' is available
-    # and compatible with 'normalised_methylset' (e.g., from 'minfi').
-    getM(normalised_methylset)
+    # and compatible with 'GenoRationSet' (e.g., from 'minfi').
+    getM(GenoRationSet)
   }, error = function(e) {
     message("Error getting M values: ", e$message)
     return(NULL) # Return NULL on error
@@ -27,7 +27,7 @@ calculateMethylationMeanDifferences <- function(normalised_methylset, pheno_tabl
   
   # Check if Beta or M values could not be retrieved
   if (is.null(beta_values) || is.null(M_values)) {
-    stop("Could not retrieve Beta or M values. Please check 'normalised_methylset' object and 'minfi' package availability.")
+    stop("Could not retrieve Beta or M values. Please check 'GenoRationSet' object.")
   }
   
   # Ensure column names of beta/M matrices match row names of pheno_table.
@@ -107,16 +107,16 @@ calculateMethylationMeanDifferences <- function(normalised_methylset, pheno_tabl
   
   return(combined_results)
 }
-'
 
-# test fucntion 1:
-dir <- "C:/Users/ghaza/Documents/ghazal/Bioinformatik_Fächer/Masterarbeit_Project/Scripts/R_Scripts/modules/main_app_tests/box_pheno_pass/intermediate_data/Five_objects_normalised_data.rds"
-methylsets <- readRDS(dir)
-pheno_table <- pData(methylsets$SWAN)
+'# test fucntion 1:
+dir <- "C:/Users/ghaza/Documents/ghazal/Bioinformatik_Fächer/Masterarbeit_Project/Scripts/R_Scripts/modules/main_app_tests/box_pheno_pass/intermediate_data/filtered_GRset_SWAN_SNPsremoved_SexChrProbes_kept_20250804.rds"
+GenoRationSet <- readRDS(dir)
+pheno_table <- pData(GenoRationSet)
 ref_group <- "unguided"
-mean_beta_M_tbl <- calculateMethylationMeanDifferences(normalised_methylset = methylsets$Noob_Swan, pheno_table = pheno_table, ref_group = ref_group)
+mean_beta_M_tbl <- calculateMethylationMeanDifferences(GenoRationSet = GenoRationSet, pheno_table = pheno_table, ref_group = ref_group)
 head(mean_beta_M_tbl)
 dim(mean_beta_M_tbl)'
+
 # Function 2 -------------------------------------------------------------------
 #Add M and Beta mean difference columns to a DMP (Differentially Methylated Positions) table.
 addMeanDifferencesToDMP <- function(dmp_table, combined_Beta_M_mean_table) {
@@ -165,6 +165,8 @@ addMeanDifferencesToDMP <- function(dmp_table, combined_Beta_M_mean_table) {
         if (is.numeric(x)) signif(x, digits = 5) else x
       })
     }
+    # Remove 'intercept' and 'f' columns
+    merged_df <- merged_df[, !names(merged_df) %in% c("intercept", "f"), drop = FALSE]
     
     return(merged_df)
     
@@ -183,9 +185,9 @@ addMeanDifferencesToDMP <- function(dmp_table, combined_Beta_M_mean_table) {
 }
 
 '#test function
-pheno_table <- pData(methylsets$SWAN)
+pheno_table <- pData(GenoRationSet$filtered_data)
 pheno <- pheno_table$Sample_Group
-dmp <- dmpFinder(methylsets$Noob_Swan, pheno = pheno, type = "categorical", qCutoff = 0.6, shrinkVar = FALSE) 
+dmp <- dmpFinder(GenoRationSet$filtered_data, pheno = pheno, type = "categorical", qCutoff = 0.6, shrinkVar = FALSE) 
 dim(dmp)
 head(dmp)
 edited_dmp <- addMeanDifferencesToDMP(dmp_table = dmp, combined_Beta_M_mean_table = mean_beta_M_tbl)
