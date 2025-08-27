@@ -129,7 +129,7 @@ ui <- navbarPage(
            tadcalling_ui("my_tadcalling_module"),
            actionButton("to_gvizplot", "Next → final plot")
   ),
-  tabPanel("Final plot",
+  tabPanel("Visulazation",
            GvizPlotUI("myGvizPlot")
   )
 )
