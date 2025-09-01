@@ -80,7 +80,7 @@ print(paste("Global: gr_cpgIslands_global loaded. Number of CpG Islands:", lengt
 # 6) UI
 ui <- navbarPage(
   id = "main_tabs",
-  title = "MethyTADGuide",
+  title = "epiTADGuide",
   theme = bs_theme(version = 5, bootswatch = "flatly"),
   
   tabPanel("Load Raw Data",
@@ -147,12 +147,15 @@ server <- function(input, output, session) {
     runjs(sprintf("$('li a[data-value=\"%s\"]').removeClass('disabled');", tab_name))
   }
   
+  #------------------------------------------------
   # --- Disable tab navigation initially ---
-  disable("main_tabs") # disables all tab switching via clicks
-  
+  disable("main_tabs") 
+  #-----------------------------------------
+ 
+   # disabeling tabs and next bottuns initially
   observe({
     print("DEBUG: Main App: Initializing UI and disabling tabs/buttons.")
-    # Disable all except Offtargets Import and Load Raw Data tab
+    # Disable all except Offtargets Import, tadcalling and Load Raw Data tab
     tabs_to_disable <- c("QC Plots", "Normalisation", "Filtering", "Annotation", "DMR Identification", "DMP Identification","DMR Boxplots", "Final plot")
     lapply(tabs_to_disable, disable_tab)
     
@@ -160,7 +163,7 @@ server <- function(input, output, session) {
     
     # Disable all "Next" buttons initially
     shinyjs::disable("to_qc")
-    # deleted to norm since this step is quick and not obligatory for the normalisation
+    # deleted to_norm since this step is quick and not obligatory for the normalisation
     shinyjs::disable("to_filter")
     shinyjs::disable("to_annot")
     shinyjs::disable("to_dmrs")
@@ -170,7 +173,8 @@ server <- function(input, output, session) {
     #shinyjs::disable("to_tadcalling") # commented cause it can work without off-targets -> they wont be ploted if not available but every thing else will be
     shinyjs::disable("to_gvizplot")   
   })
-  
+  #-------------------------------------------
+  # defining reactive values
   normalized_output <- reactiveVal(NULL)
   filter_results <- reactiveVal(NULL)
   annotation_results <- reactiveVal(NULL)
@@ -179,7 +183,7 @@ server <- function(input, output, session) {
   tadcalling_results <- reactiveVal(NULL)
   dmp_results <- reactiveVal(NULL)
   boxplot_results <- reactiveVal(NULL)
-  
+  #--------------------------------
   
   # --- Module Server Calls and Data Flow ---
   # 1- Load Data Module
@@ -195,17 +199,15 @@ server <- function(input, output, session) {
       shinyjs::disable("to_qc")
     }
   })
-  # --- Navigation Logic ---
-  # Navigate to QC tab
+  
+  # ---  Navigate to QC tab ---
   observeEvent(input$to_qc, {
     print("DEBUG: Main App: 'to_qc' button clicked.")
-    # Ensure targets is set before proceeding
     req(loaded_data$targets())
-    
     enable_tab("QC Plots")
     updateNavbarPage(session, "main_tabs", selected = "QC Plots")
     
-    # Load QC server logic (deferred execution)
+    # Load QC server logic
     qcServer("qc",
              RGset = reactive({ loaded_data$RGset() }),
              raw_normalised = reactive({ loaded_data$raw_normalised() }),
@@ -217,9 +219,7 @@ server <- function(input, output, session) {
   #-----------------------------------------------
   # Navigate to Normalisation tab
   observeEvent(input$to_norm, {
-    # Ensure normalized_output can be set by the module
-    req(loaded_data$RGset(), loaded_data$raw_normalised(), loaded_data$targets()) # Ensure inputs for normalisation are ready
-    
+    req(loaded_data$RGset(), loaded_data$raw_normalised(), loaded_data$targets()) 
     enable_tab("Normalisation")
     updateNavbarPage(session, "main_tabs", selected = "Normalisation")
     

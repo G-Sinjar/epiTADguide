@@ -53,6 +53,8 @@ norm_server <- function(id, RGset, raw_normalised, targets, project_output_dir) 
     noob_normalised_res <- reactiveVal(NULL)
     noob_swan_normalised_res <- reactiveVal(NULL)
     
+    #-----------------------------------------
+    #----------- normalization unit ----------
     # Use an observeEvent for the RGset to trigger normalizations
     observeEvent(RGset(), {
       req(RGset(), raw_normalised(), targets())
@@ -307,7 +309,8 @@ norm_server <- function(id, RGset, raw_normalised, targets, project_output_dir) 
         incProgress(1, detail = "Plot ready")
       })
     })
-    
+    #----------------------------------------
+    # download plot button
     output$download_plot <- downloadHandler(
       filename = function() {
         timestamp <- format(Sys.time(), "%Y%m%d")
@@ -349,7 +352,7 @@ norm_server <- function(id, RGset, raw_normalised, targets, project_output_dir) 
                "Quantile" = {
                  req(Quantile_normalised_res(), targets())
                  densityPlot(getBeta(Quantile_normalised_res()), sampGroups = targets()$Sample_Group,
-                             main = "Beta values distribution after Quantile",
+                             main = "Beta values distribution after Stratified Quantile",
                              pal = rainbow(length(unique(targets()$Sample_Group))))
                }
         )
@@ -357,7 +360,7 @@ norm_server <- function(id, RGset, raw_normalised, targets, project_output_dir) 
         dev.off()
       }
     )
-    
+    #-------------------------------------
     # Return a list of reactive values for downstream modules
     return(list(
       Raw = raw_normalised,

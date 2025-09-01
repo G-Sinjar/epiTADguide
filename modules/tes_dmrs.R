@@ -11,7 +11,8 @@ library(shinyjs)
 
 
 ## load input data
-filtered_rgset <- readRDS("../intermediate_data/filtered_GRset_SWAN_SNPsremoved_SexChrProbes_kept_20250608.rds")
+SWAN_filtered_rgset <- readRDS("../main_app_tests/tt/intermediate_data/filtered_GRset_SWAN_SNPsremoved_SexChrProbes_kept_20250831.rds")
+#Noobswan_filter <- readRDS("../main_app_tests/tt/intermediate_data/filtered_GRset_NoobSwan_SNPsremoved_SexChrProbes_kept_20250831.rds")
 
 # Load custom utility functions for DMR processing
 # In a module, you might consider if these utils should always loaded by the main app. For now, well keep the source here.
@@ -57,7 +58,7 @@ ui <- page_navbar(
 # Server
 server <- function(input, output, session) {
   # Wrap your object as a reactive expression
-  filtered_rgset_reactive <- reactive({ filtered_rgset })
+  filtered_rgset_reactive <- reactive({ SWAN_filtered_rgset })
   
   # Call the module
   annotated_table <- dmrs_server("dmrs", 

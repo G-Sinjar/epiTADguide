@@ -43,14 +43,15 @@ loadDataUI <- function(id) {
         verbatimTextOutput(ns("status"))
       ),
       
-      # Card showing the array infos details
+      # Card showing the array meta infos details
       card(
-        card_header("Array information"),
-        uiOutput(ns("arry_info_ui")) # Changed to uiOutput to allow for conditional display of a table
+        card_header("Array Meta Information"),
+        uiOutput(ns("arry_info_ui")) 
       )
     )
   )
 }
+
 
 # ─────────────────────────────────────
 # SERVER FUNCTION
@@ -59,16 +60,14 @@ loadDataServer <- function(id) {
   moduleServer(id, function(input, output, session) {
     ns <- session$ns 
     
-    # -----------functions-------------
+    # ----------- messages -------------
     # 1. append_status function: Append new message to current status text
     append_status <- function(new_message) {
       current <- status_log()
       updated <- paste(current, new_message, sep = "\n")
       status_log(updated)
     }
-    
-    #--------------------------------------------------------
-    # ---------initial status---------
+    #initial status
     # Reactive string to store and update the step-by-step status messages
     status_log <- reactiveVal("Waiting for user to set project name and output path...")
     
@@ -88,6 +87,7 @@ loadDataServer <- function(id) {
     #3. Boolean Reactive value to control visibility of other sidebar elements
     raw_data_input_visible <- reactiveVal(FALSE)
     
+    #------------------------------
     # Render conditional UI elements
     output$conditional_raw_data_input <- renderUI({
       if (raw_data_input_visible()) {
@@ -139,7 +139,7 @@ loadDataServer <- function(id) {
       raw_data_input_visible(FALSE)
       
       if (!dir.exists(base_path)) {
-        append_status(paste0("❌ Error: The specified Base Folder Path for Outputs does not exist: ", base_path))
+        append_status(paste0("❌ Error: The specified  Folder Path for Outputs does not exist:\n" , base_path))
         showNotification(
           paste0("Error: The base folder path '", base_path, "' does not exist. Please enter a valid path."),
           type = "error",

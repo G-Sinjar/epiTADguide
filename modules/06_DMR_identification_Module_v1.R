@@ -279,7 +279,7 @@ dmrs_server <- function(id, filtered_rgset_reactive, tx_gr_filtered_static,proje
     #---------------------------------------------------
     # Helper function to generate a consistent filename base
     get_dmr_base_filename <- function(cutoff_from, cutoff_to, B_val, ref_group, tested_group) {
-      paste0("DMRs_", ref_group, "_vs_", tested_group,
+      paste0("DMRs_" ,ref_group, "_vs_", tested_group,
              "_cutoff_", format(cutoff_from, nsmall = 2), "_",
              format(cutoff_to, nsmall = 2), "_B", B_val)
     }
@@ -407,7 +407,7 @@ dmrs_server <- function(id, filtered_rgset_reactive, tx_gr_filtered_static,proje
         base_filename <- get_dmr_base_filename(input$cutoff_from, input$cutoff_to, input$B_val, input$ref_group, input$tested_group)
         output_dir_full <- file.path(project_output_dir(), "DMR_results")
         if (!dir.exists(output_dir_full)) dir.create(output_dir_full, recursive = TRUE)
-        output_path <- file.path(output_dir_full, paste0(base_filename, "_", format(Sys.Date(), "%Y%m%d"), ".rds"))
+        output_path <- file.path(output_dir_full, paste0(base_filename, ".rds"))
         
         # Get the phenotype data for saving
         pheno_data <- pd_reactive()

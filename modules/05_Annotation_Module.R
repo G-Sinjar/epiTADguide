@@ -159,12 +159,14 @@ annotationServer <- function(id, grset_reactive, project_output_dir) {
         incProgress(1)
       })
     })
-    
+    #------------------
+    #rendering the table to UI
     output$annot_table <- renderDT({
       req(annot_df())
       datatable(annot_df(), options = list(pageLength = 25, scrollX = TRUE))
     })
-    
+    #---------------
+    # download button handler
     output$download_data <- downloadHandler(
       filename = function() {
         paste0("annotation.", ifelse(input$download_format == "CSV", "csv", "xlsx"))
