@@ -336,7 +336,7 @@ create_boxplot <- function(
       ) +
         scale_color_manual(
           name = "Significance",
-          values = c("Sig" = "red", "Insig" = "black"),
+          values = c("Sig" = "green", "Insig" = "black"),
           labels = c("Sig" = "Significant", "Insig" = "Non-significant")
         )
     } else {
@@ -358,7 +358,7 @@ create_boxplot <- function(
       ) +
         scale_color_manual(
           name = "Significance",
-          values = c("Sig" = "red", "Insig" = "black"),
+          values = c("Sig" = "green", "Insig" = "black"),
           labels = c("Sig" = "Significant", "Insig" = "Non-significant")
         )
     } else {
@@ -403,6 +403,15 @@ create_boxplot <- function(
         stroke = 0.5
       )
     )
+    p <- p + labs(
+      title = "Boxplot of CpG Methylation",
+      subtitle = paste("Chromosome:", unique(long_format_table$chr))
+    ) +
+      theme(
+        plot.title = element_text(hjust = 0.5, size = 16, face = "bold"),
+        plot.subtitle = element_text(hjust = 0.5, size = 12)
+      )
+    
     return(p)
   }
 }

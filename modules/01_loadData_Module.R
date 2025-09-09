@@ -39,7 +39,7 @@ loadDataUI <- function(id) {
     layout_columns(
       # Card showing the status of loading process
       card(
-        card_header("Load Status"),
+        card_header("Data Loading Status"),
         verbatimTextOutput(ns("status"))
       ),
       
@@ -149,7 +149,7 @@ loadDataServer <- function(id) {
         raw_data_input_visible(FALSE)
         return()
       } else {
-        append_status(paste0("✅ Base Folder Path exists: ", base_path))
+        append_status(paste0("✅ Base Folder Path exists: \n", base_path))
       }
       
       final_project_path <- file.path(base_path, project_name)
@@ -159,7 +159,7 @@ loadDataServer <- function(id) {
           dir.create(final_project_path, recursive = TRUE, showWarnings = TRUE)
           append_status("✅ Successfully created project directory")
           project_output_dir(final_project_path)
-          append_status(paste0("✅ Project output path set successfully.", final_project_path))
+          append_status(paste0("✅ Project output path set successfully.\n", final_project_path))
           raw_data_input_visible(TRUE)
         }, error = function(e) {
           append_status(paste("❌ Error creating project directory:", e$message))
@@ -182,7 +182,7 @@ loadDataServer <- function(id) {
           raw_data_input_visible(TRUE)
         })
       } else {
-        append_status(paste0("✅ Project directory already exists: ", final_project_path))
+        append_status(paste0("✅ Project directory already exists: \n", final_project_path))
         project_output_dir(final_project_path)
         append_status("✅ Project output path set successfully.\nNow please enter the path to your raw data from sequencer in the side bar bellow.")
         raw_data_input_visible(TRUE)
@@ -379,8 +379,8 @@ loadDataServer <- function(id) {
 }
 
 
-
-'# test_loadDataApp.R
+'
+# test_loadDataApp.R
 library(shiny)
 library(bslib)
 library(minfi)

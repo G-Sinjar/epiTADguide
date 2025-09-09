@@ -181,6 +181,9 @@ filter_data_server <- function(id, RGset, raw_normalised, normalized_all_methods
         #--------------------------
         # add predict sex here from getSex(mapToGenome(current_normalized_data_value))
         # Step 1: Sex Prediction
+        
+        # add this note if all predicted have one sex: 
+        #Applying sex-stratified filtering—treating XX and XY samples separately—preserves the expected behavior and probe numbers. Consequently, filtering without accounting for sex may inadvertently discard critical Y-linked probes, even in female samples, which can skew sex predictions.
         incProgress(0.2, detail = "Step 1: Predicting Sex")
         status(paste(status(), "\nStep 1: Predicting sample sex"))
         
@@ -533,7 +536,7 @@ filter_data_server <- function(id, RGset, raw_normalised, normalized_all_methods
 }
 
 
-# test module
+'# test module
 # ───────────────────────────────────────────────────────────────────────
 # LIBRARIES
 library(shiny)
@@ -598,4 +601,4 @@ server <- function(input, output, session) {
 }
 
 
-shinyApp(ui = ui, server = server)
+shinyApp(ui = ui, server = server)'

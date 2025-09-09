@@ -5,20 +5,20 @@
 library(shiny)
 library(bslib)
 library(minfi)
-library(shinyjs) # for enabling/disabling tabs
+library(shinyjs)      # for enabling/disabling tabs
 library(shinyWidgets)
-library(DT) # DT is needed for the filtering module's table output
-library(writexl) # For excel downloads in filtering module
-library(openxlsx) # For excel downloads in filtering module
+library(DT)           # DT is needed for the filtering module's table output
+library(writexl)      # For excel downloads in filtering module
+library(openxlsx)     # For excel downloads in filtering module
 library(readr)
-library(dplyr) # For data manipulation (filter, select, mutate, bind_rows)
+library(dplyr)        # For data manipulation (filter, select, mutate, bind_rows)
 library(stringr)
-library(reticulate) # ADDED: Needed for Python integration in tadcalling_module
-library(processx) # ADDED: Needed for running external processes (Java TADcaller)
+library(reticulate)   # ADDED: Needed for Python integration in tadcalling_module
+library(processx)     # ADDED: Needed for running external processes (Java TADcaller)
 # both libraries are automaticaly loaded when they are needed -> to Do test app without thoes
 #library(IlluminaHumanMethylationEPICv2manifest)
 #library(IlluminaHumanMethylationEPICv2anno.20a1.hg38)
-library(GenomicRanges) # For GenomicRatioSet and related operations in filtering module
+library(GenomicRanges)      # For GenomicRatioSet and related operations in filtering module
 library(EnsDb.Hsapiens.v86)
 library(fs)
 library(purrr)
@@ -37,18 +37,21 @@ source("modules/02_QC_Module.R")
 source("modules/03_Normalisation_Module.R")
 source("modules/04_filtering_Module.R")
 source("modules/05_Annotation_Module.R")
-source("modules/06_DMR_identification_Module_v1.R")
+source("modules/06_DMR_identification_Module.R")
 source("utils/dmrs_utils.R")
 source("utils/preprocessing_utils.R")
 source("modules/07_boxplots_Module.R")
 source("utils/dmrs_boxplot_utils.R")
 source("modules/08_offspotter_results_processing_module.R")
-source("modules/09_TADcalling_module_V1_all_Chr.R")
+source("modules/09_TADcalling_module.R")
 source("utils/TADcalling_utils.R")
 source("utils/GVIZ_plot_utils.R")
-source("modules/10_GVIZ_plot_Module_V1.R")
+source("modules/10_GVIZ_plot_Module.R")
 source("modules/11_dmp_module.R")
 source("utils/DMP_utils.R")
+
+# for loading the mcool contact matrix --> max 3 GB
+options(shiny.maxRequestSize = 3 * 1024^3)  # 3 GB
 
 
 #3) This is a static object that will be passed to the DMR module
@@ -82,13 +85,13 @@ ui <- navbarPage(
   id = "main_tabs",
   title = "epiTADGuide",
   theme = bs_theme(version = 5, bootswatch = "flatly"),
-  
+  # First module tab
   tabPanel("Load Raw Data",
            useShinyjs(),
            loadDataUI("loader"),
            actionButton("to_qc", "Next → QC")
   ),
-  
+  # second module tab
   tabPanel("QC Plots",
            qcUI("qc"),
            actionButton("to_norm", "Next → Normalisation")

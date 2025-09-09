@@ -1,4 +1,4 @@
-# 10_Gviz_Visualization_Module.R
+# 10_Gviz_plot_Module_v1.R
 # Author: Ghazal Sinjar
 # Date: 02.07.2025
 # Description:
@@ -6,24 +6,6 @@
 # It enables dynamic plotting of differentially methylated regions (DMRs) along with gene annotations and other genomic features.
 # The module integrates with upstream DMR identification results and uses EnsDb or TxDb objects for gene tracks.
 # The visualization includes gene models, ideograms, axis tracks, and optional custom annotation tracks.
-
-# Load Required Libraries for the entire app
-library(shiny)
-library(shinyWidgets) # For selectizeInput
-library(bslib)
-library(Gviz)
-library(GenomicRanges)
-library(IRanges)
-library(S4Vectors)
-library(GenomeInfoDb)
-library(BiocGenerics)
-library(DT) # If you plan to use data tables
-library(EnsDb.Hsapiens.v86)
-library(readr) # For read_delim
-library(dplyr) # For data manipulation
-
-
-
 
 # ─────────────────────────────────────
 # User Interface (UI) FUNCTION for the Module
@@ -43,16 +25,31 @@ GvizPlotUI <- function(id) {
       uiOutput(ns("chromosome_input")),
       numericInput(ns("from"), "From:", value = 1, min = 1, max = 1),
       numericInput(ns("to"), "To:", value = 1000, min = 1, max = 1),
+      checkboxInput(ns("include_tads"), "Include TAD/SubTAD tracks", value = FALSE),
+      br(),
+      # Static display for Binsize
+      div(
+        class = "mb-1", 
+        HTML('<label class="control-label">TAD/SubTAD Bin Size (kb):</label>'),
+        uiOutput(ns("display_binsize"))
+      ),
       
-      # Optional inputs for TADs/Beta values if you want to make them dynamic
-      #numericInput(ns("binsize"), "TAD/SubTAD Bin Size (kb):", value = 25, min = 1),
-      #textInput(ns("tissue"), "TAD/SubTAD Tissue:", value = "CAKI2"),
-      # num_samples is derived from dmr_results, no direct UI input needed for it here,
-      # but it's passed to create_tracks.
-      
-      helpText("Note: The boundaries of TADs and sub-TADs are approximate and depend on the resolution of the TAD-calling algorithm."),
+      # Static display for Tissue
+      div(
+        class = "mb-1", 
+        HTML('<label class="control-label">TAD/SubTAD Tissue:</label>'),
+        uiOutput(ns("display_tissue")) # This UI output will display the static value
+      ),
+      # Static display for qval
+      div(
+        class = "mb-1", 
+        HTML('<label class="control-label">qval cutoff of DMPs:</label>'),
+        uiOutput(ns("qval"))
+      ),
+      helpText("CpGs in green have q-values ≤ the value above."),
       
       actionButton(ns("create_plot"), "Create Plot", class = "btn btn-info"),
+      helpText("Note: The boundaries of TADs and sub-TADs are approximate and depend on the resolution of the TAD-calling algorithm."),
       
       div(
         actionButton(ns("zoom_in"), "🔍 Zoom In", class = "btn btn-success btn-sm"),
@@ -75,10 +72,10 @@ GvizPlotUI <- function(id) {
 # ─────────────────────────────────────
 GvizPlotServer <- function(id,
                            dmr_results,
-                           annotation_results,
+                           dmp_results,
+                           boxplot_results,
                            offtarget_table,
-                           tad_table,
-                           subtad_table,
+                           tadcalling_results,
                            chr_size_df_global,
                            tx_gr_filtered_global,
                            gr_cpgIslands_global,
@@ -88,19 +85,89 @@ GvizPlotServer <- function(id,
     ns <- session$ns
     
     print(paste0("Module Server (ID: ", id, ") started."))
-    
     # --- Reactive Values for Plotting Range ---
+    processed_chroms_list_rv <- reactiveVal(NULL)
     # These now specifically hold the range/chr for the *currently displayed plot*
     selectedRange <- reactiveVal(c(NA, NA))
     selectedChr <- reactiveVal(NA_character_)
-    # This reactiveVal holds the actual Gviz track objects
     all_gviz_tracks_rv <- reactiveVal(NULL)
+    # these hold the granges of tads and subtads for zooming and paning since they are on the same chromosome of the plot created
+    gr_TADs <- reactiveVal(NULL)
+    gr_SUBTADs <- reactiveVal(NULL)
+    #--------------------------------------------------------------------
+    # --- Static Binsize and Tissue Display ---
+    output$display_binsize <- renderUI({
+      # First, check if the reactive itself exists and is not NULL.
+      # This prevents the "could not find function" error.
+      if (!is.null(tadcalling_results)) {
+        # Now that we know it's a valid object (likely a reactive), we can check its value.
+        # req() is also safe to use here because it will stop execution if tadcalling_results() returns NULL.
+        req(tadcalling_results())
+        
+        # The rest of your logic is sound.
+        print(paste("DEBUG: display_binsize: class(tadcalling_results()) is", class(tadcalling_results())))
+        print(paste("DEBUG: display_binsize: names(tadcalling_results()) are", paste(names(tadcalling_results()), collapse = ", ")))
+        
+        req(tadcalling_results()$current_resolution())
+        print(paste("DEBUG: display_binsize: class(tadcalling_results()$current_resolution) value is", class(tadcalling_results()$current_resolution())))
+        
+        p(paste0(tadcalling_results()$current_resolution(), " kb"), class = "form-control-plaintext")
+      } else {
+        p("Not available, No TADs are called.", class = "form-control-plaintext")
+      }
+    })
     
+    #--------------------------
+    output$display_tissue <- renderUI({
+      # First, check if the reactive expression itself is not NULL
+      if (!is.null(tadcalling_results)) {
+        # If it exists, call it and then use req() to ensure its value is not NULL
+        req(tadcalling_results())
+        
+        # DEBUG: Check what tadcalling_results() returns
+        print(paste("DEBUG: display_tissue: class(tadcalling_results()) is", class(tadcalling_results())))
+        print(paste("DEBUG: display_tissue: names(tadcalling_results()) are", paste(names(tadcalling_results()), collapse = ", ")))
+        
+        req(tadcalling_results()$current_tissue()) # Get the reactive value from tadcalling_results
+        # DEBUG: Check the class of the reactive object itself
+        print(paste("DEBUG: display_tissue: class(tadcalling_results()$current_tissue()) is", class(tadcalling_results()$current_tissue())))
+        
+        p(tadcalling_results()$current_tissue(), class = "form-control-plaintext")
+      } else {
+        p("Not available, No TADs are called.", class = "form-control-plaintext")
+      }
+    })
+    # --- End Static Binsize and Tissue Display ---
+    #------------------------------------
+    output$qval <- renderUI({
+      
+      req(dmp_results()$last_qvalue()) 
+      # DEBUG: Check the class of the reactive object itself
+      print(paste("DEBUG: qval: class(dmp_results()$last_qvalue()) is", class(dmp_results()$last_qvalue())))
+      
+      p(dmp_results()$last_qvalue(), class = "form-control-plaintext")
+    })
     
+    #-------------------------------------------
+    # get chr list from tadcalling module
+    observe({
+      # First, check if the reactive exists and is not NULL before trying to call it.
+      if (!is.null(tadcalling_results) && !is.null(tadcalling_results())) {
+        # Now that we know it's a valid reactive, we can use req()
+        req(tadcalling_results())
+        processed_chroms_list_rv(tadcalling_results()$processed_chroms_list_rv())
+      } else {
+        # You might want to handle the case where tadcalling_results() is NULL
+        # For example, by setting the list to an empty value or showing a notification.
+        processed_chroms_list_rv(NULL)
+        showNotification("TAD calling results are not available.", type = "warning", duration = 8)
+      }
+    })
+    #--------------------------------------------------------
     # --- Reactive GRanges Objects from input tables ---
     gr_dmrs <- reactive({
       req(dmr_results())
-      req(dmr_results()$dmr_table)
+      req(dmr_results()$dmr_table())
       print("Reactive: gr_dmrs is calculating...")
       tryCatch({
         gr <- create_gr_dmrs(dmr_results()$dmr_table())
@@ -128,11 +195,11 @@ GvizPlotServer <- function(id,
     })
     
     gr_cpgs <- reactive({
-      req(annotation_results())
-      req(annotation_results()$annotated_table)
+      req(boxplot_results())
+      
       print("Reactive: gr_cpgs is calculating...")
       tryCatch({
-        gr <- create_gr_cpgs(annotation_results()$annotated_table())
+        gr <- create_gr_cpgs(boxplot_results())
         print(paste("Reactive: gr_cpgs created with", length(gr), "CpGs."))
         gr
       }, error = function(e) {
@@ -148,7 +215,7 @@ GvizPlotServer <- function(id,
       
       # Now, get the INNER reactiveVal's value. 
       # This means calling the result of the first call, like this:
-      df_offtargets <- offtarget_table()#() 
+      df_offtargets <- offtarget_table()() 
       
       req(df_offtargets) # Ensure the data.frame is not NULL
       
@@ -162,104 +229,17 @@ GvizPlotServer <- function(id,
         NULL
       })
     })
-    
-    # Corrected gr_TADs reactive to use dynamic chromosome
-    gr_TADs <- reactive({
-      req(tad_table())
-      
-      # IMPORTANT: Use input$chromosome or selectedChr() here for the *data filtering*
-      # This reactive needs to react to changes in the UI inputs
-      current_chr_for_tad <- if (input$region_type == "Desired targeted region") {
-        req(input$chromosome) # Ensure input$chromosome has a value
-        input$chromosome
-      } else {
-        # When selecting DMR/Off-target, this needs to react to what's chosen in input$region_choice
-        # For this to work correctly, selectedChr() needs to be updated by the input$region_choice observer
-        # and then this reactive will re-evaluate.
-        # This will be tricky if selectedChr() is only updated on "Create Plot".
-        # Let's adjust this: gr_TADs and gr_SUBTADs should probably depend on a reactive holding the
-        # *currently proposed* chromosome, not the one for the *rendered* plot.
-        # However, for plot generation, they ultimately need the 'chr' that the plot will use.
-        # Let's revisit this if issues arise. For now, we'll keep it reactive to the inputs.
-        # The ultimate solution might involve passing a specific 'chr' argument to create_tracks.
-        if (!is.null(input$region_choice) && input$region_choice != "") {
-          # Extract chr from region_choice if available, otherwise fall back.
-          # This is a bit of a workaround to get the "proposed" chromosome
-          # without relying on selectedChr() which is for the *current plot*.
-          if (input$region_type == "DMRs" && !is.null(gr_dmrs())) {
-            selected_dmr_id <- sub("^(\\S+)\\s.*$", "\\1", input$region_choice)
-            dmr_gr <- gr_dmrs()[gr_dmrs()$DMR_ID == selected_dmr_id]
-            if (length(dmr_gr) > 0) as.character(seqnames(dmr_gr[1])) else NA_character_
-          } else if (input$region_type == "Off-targets" && !is.null(gr_offtargets())) {
-            offtarget_gr <- gr_offtargets()[gr_offtargets()$ID == input$region_choice]
-            if (length(offtarget_gr) > 0) as.character(seqnames(offtarget_gr[1])) else NA_character_
-          } else {
-            NA_character_
-          }
-        } else {
-          NA_character_ # Fallback if nothing selected yet
-        }
-      }
-      
-      req(current_chr_for_tad) # Ensure current_chr_for_tad has a value
-      print(paste("Reactive: gr_TADs is calculating for chromosome", current_chr_for_tad, "..."))
-      tryCatch({
-        gr <- create_gr_TADs_SUBTADs(tad_table(), chr = current_chr_for_tad) # CORRECTED: dynamic chr
-        print(paste("Reactive: gr_TADs created with", length(gr), "TADs."))
-        gr
-      }, error = function(e) {
-        message("Error in create_gr_TADs_SUBTADs() for TADs: ", e$message)
-        NULL
-      })
-    })
-    
-    # Corrected gr_SUBTADs reactive to use dynamic chromosome
-    gr_SUBTADs <- reactive({
-      req(subtad_table())
-      
-      current_chr_for_subtad <- if (input$region_type == "Desired targeted region") {
-        req(input$chromosome)
-        input$chromosome
-      } else {
-        if (!is.null(input$region_choice) && input$region_choice != "") {
-          if (input$region_type == "DMRs" && !is.null(gr_dmrs())) {
-            selected_dmr_id <- sub("^(\\S+)\\s.*$", "\\1", input$region_choice)
-            dmr_gr <- gr_dmrs()[gr_dmrs()$DMR_ID == selected_dmr_id]
-            if (length(dmr_gr) > 0) as.character(seqnames(dmr_gr[1])) else NA_character_
-          } else if (input$region_type == "Off-targets" && !is.null(gr_offtargets())) {
-            offtarget_gr <- gr_offtargets()[gr_offtargets()$ID == input$region_choice]
-            if (length(offtarget_gr) > 0) as.character(seqnames(offtarget_gr[1])) else NA_character_
-          } else {
-            NA_character_
-          }
-        } else {
-          NA_character_
-        }
-      }
-      
-      req(current_chr_for_subtad)
-      print(paste("Reactive: gr_SUBTADs is calculating for chromosome", current_chr_for_subtad, "..."))
-      tryCatch({
-        gr <- create_gr_TADs_SUBTADs(subtad_table(), chr = current_chr_for_subtad) 
-        print(paste("Reactive: gr_SUBTADs created with", length(gr), "SubTADs."))
-        gr
-      }, error = function(e) {
-        message("Error in create_gr_TADs_SUBTADs() for SUBTADs: ", e$message)
-        NULL
-      })
-    })
     #--------------------------------------------------------------------
-    
     # --- Chromosome Length Management ---
     # This reactive now reflects the chromosome selected in the UI inputs,
     # *not* necessarily the one currently plotted.
     selected_chr_length <- reactive({
-      # The chromosome name comes from input$chromosome if "Desired targeted region"
+      # The chromosome name comes from input$chromosome_input if "Desired targeted region"
       # or from selectedChr() if "DMRs" or "Off-targets"
       # To prevent triggering on selectedChr() before create_plot,
       # let's make this depend on the UI inputs for the *proposed* chromosome.
       chr_name <- if (input$region_type == "Desired targeted region") {
-        input$chromosome
+        input$chromosome_input
       } else {
         # When changing region_choice, this logic determines the chromosome for validation
         if (!is.null(input$region_choice) && input$region_choice != "") {
@@ -277,6 +257,7 @@ GvizPlotServer <- function(id,
           NA_character_ # Fallback if nothing selected yet
         }
       }
+      
       # Crucial: Ensure chr_name is valid before proceeding
       req(chr_name) # Ensure chr_name is not NULL or empty string
       validate(
@@ -291,7 +272,9 @@ GvizPlotServer <- function(id,
       len
     })
     
-    # observe block that updates max values of 'from' and 'to' numeric inputs
+    
+    #----------------------------------------------------------------------
+    # observe block that updates *max values* of 'from' and 'to' numeric inputs
     observe({
       chr_len <- selected_chr_length() # This depends on the *proposed* chromosome from UI
       if (!is.na(chr_len) && !is.null(chr_len) && length(chr_len) > 0) { # Add more robust check
@@ -305,9 +288,12 @@ GvizPlotServer <- function(id,
     # --- Dynamic UI for Chromosome based on region_type ---
     output$chromosome_input <- renderUI({
       ns <- session$ns
+      chrom_choices <- processed_chroms_list_rv()
       if (input$region_type == "Desired targeted region") {
-        print("renderUI: Showing chromosome_input.")
-        textInput(ns("chromosome"), "Chromosome:", value = "")
+        selectInput(session$ns("chromosome_input"), 
+                    label = "Select Chromosome:",
+                    choices = chrom_choices,
+                    selected = chrom_choices[1])
       } else {
         print("renderUI: Hiding chromosome_input.")
         NULL
@@ -315,7 +301,8 @@ GvizPlotServer <- function(id,
     })
     
     #----------------------------------------------------------------------------------------
-    # Handle region_type change:
+    # Handle region_type change: (DMR, Off-targets, disered): 
+    #this changes the first region choices by getting it from the table. this triggers the observeEvent(input$region_choice)
     observeEvent(input$region_type, {
       print(paste("ObserveEvent: region_type changed to", input$region_type))
       
@@ -341,7 +328,18 @@ GvizPlotServer <- function(id,
           dmrs_data <- isolate(gr_dmrs())
           if (!is.null(dmrs_data) && length(dmrs_data) > 0) {
             first_dmr <- dmrs_data[1]
-            first_dmr_id_display <- paste0(first_dmr$DMR_ID, " (", first_dmr$overlapped_gene_name, ")")
+            
+            # Access the chromosome from the object. This might be 'seqnames' or 'chr'
+            # Example assuming the columns are named 'DMR_ID', 'seqnames', and 'first_overlapped_gene'
+            first_dmr_id_display <- paste0(
+              first_dmr$DMR_ID, 
+              " (", 
+              as.character(first_dmr@seqnames), # or first_dmr$chr
+              "_", 
+              first_dmr$first_overlapped_gene, 
+              ")"
+            )
+            
             # This update will trigger observeEvent(input$region_choice)
             updateSelectizeInput(session, "region_choice", selected = first_dmr_id_display, server = TRUE)
             print("ObserveEvent: Switched to DMRs, first DMR set as selected_choice (will trigger update).")
@@ -350,7 +348,7 @@ GvizPlotServer <- function(id,
             showNotification("No DMRs found. Please load DMR data.", type = "warning")
             print("ObserveEvent: Switched to DMRs, but no data available to pre-select.")
           }
-        } else if (input$region_type == "Off-targets") {
+        }else if (input$region_type == "Off-targets") {
           offtargets_data <- isolate(gr_offtargets())
           if (!is.null(offtargets_data) && length(offtargets_data) > 0) {
             first_offtarget <- offtargets_data[1]
@@ -369,6 +367,7 @@ GvizPlotServer <- function(id,
     
     #------------------------------------------------------------------------
     # --- Region Selection Logic (Dropdown) ---
+    # handels choices appearing and choosing one of them   
     output$region_selector <- renderUI({
       req(input$region_type)
       
@@ -379,10 +378,20 @@ GvizPlotServer <- function(id,
         print("renderUI: region_selector for type DMRs")
         if (!is.null(gr_dmrs()) && length(gr_dmrs()) > 0) {
           dmrs <- gr_dmrs()
-          current_choices <- paste0(dmrs$DMR_ID, " (", dmrs$overlapped_gene_name, ")")
+          
+          # Construct the gene part of the string conditionally
+          gene_part <- ifelse(
+            is.na(dmrs$first_overlapped_gene),
+            "",  # If gene is NA, add an empty string
+            paste0("_", dmrs$first_overlapped_gene) # If gene is not NA, add "_GeneName"
+          )
+          
+          # Combine everything to create the full display string
+          current_choices <- paste0(dmrs$DMR_ID, " (", as.character(seqnames(dmrs)), gene_part, ")")
+          
           names(current_choices) <- current_choices
           
-          # If the input$region_choice already has a value, try to keep it.
+          # The rest of your code remains the same
           if (!is.null(input$region_choice) && input$region_choice %in% current_choices) {
             selected_choice <- input$region_choice
           } else if (length(current_choices) > 0) {
@@ -414,13 +423,11 @@ GvizPlotServer <- function(id,
         return(NULL) # No dropdown needed for this type
       }
       
-      selectizeInput(
-        ns("region_choice"),
-        paste("Choose", input$region_type, ":"),
-        choices = current_choices,
-        selected = selected_choice, # This will be the initially selected value
-        multiple = FALSE,
-        options = list(placeholder = paste("Select a", input$region_type, "ID"))
+      selectInput(session$ns("region_choice"),
+                  label =paste("Choose", input$region_type, ":"),
+                  choices = current_choices,
+                  selected = selected_choice, # This will be the initially selected value
+                  multiple = FALSE
       )
     })
     #-------------------------------------------------------------------------------------------------------
@@ -436,7 +443,7 @@ GvizPlotServer <- function(id,
       current_chr_name <- NULL
       if (input$region_type == "DMRs") {
         req(gr_dmrs())
-        selected_dmr_id <- sub("^(\\S+)\\s.*$", "\\1", input$region_choice)
+        selected_dmr_id <- str_extract(input$region_choice, "^\\S+")
         selected_gr <- gr_dmrs()[gr_dmrs()$DMR_ID == selected_dmr_id]
         print(paste("ObserveEvent: Selected DMR ID for update:", selected_dmr_id))
       } else if (input$region_type == "Off-targets") {
@@ -482,17 +489,33 @@ GvizPlotServer <- function(id,
     # --- Handle 'Create Plot' button click ---
     observeEvent(input$create_plot, {
       print("ObserveEvent: 'Create Plot' button clicked. Starting track creation.")
-      
+      observe({
+        if (!is.null(tadcalling_results)) {
+          updateCheckboxInput(session, "include_tads", value = TRUE)
+        } else {
+          updateCheckboxInput(session, "include_tads", value = FALSE)
+        }
+      })
+      # Early validation
+      if (isTRUE(input$include_tads)) {
+        if (is.null(tadcalling_results)) {
+          showNotification("Cannot include TADs - no TAD calling results available",
+                           type = "warning")
+          updateCheckboxInput(session, "include_tads", value = FALSE)
+          return()
+        }
+      }
       withProgress(message = 'Setting up plot region and creating tracks...', value = 0.1, {
+        # step1: set the from, to, chr 
         local_from <- input$from
         local_to <- input$to
         local_chr <- if (input$region_type == "Desired targeted region") {
           # ADDED CHECK if chr is entered by the user or not
-          if (is.null(input$chromosome) || input$chromosome == "") {
+          if (is.null(input$chromosome_input) || input$chromosome_input == "") {
             showNotification("Please enter a chromosome name for 'Desired targeted region'.", type = "error", duration = 5)
             return(NULL) # Return NULL to stop further execution in this observeEvent/reactive
           }
-          input$chromosome
+          input$chromosome_input
         }else {
           # Get the chromosome from the currently selected region_choice
           if (input$region_type == "DMRs") {
@@ -512,6 +535,9 @@ GvizPlotServer <- function(id,
         }
         req(local_chr) # Ensure we have a chromosome before proceeding
         
+        
+        #--------------------------------------------
+        # steps 2: validate them, get chr length
         # Validate values (keep this important validation)
         if (is.null(local_chr) || is.na(local_chr) || local_chr == "") {
           showNotification("Please specify a chromosome for the plot.", type = "error")
@@ -526,29 +552,106 @@ GvizPlotServer <- function(id,
         # Re-fetch chromosome length based on local_chr for robustness
         current_chr_len_for_plot <- chr_size_df_global %>% dplyr::filter(Chromosome == local_chr) %>% pull(Length)
         if (length(current_chr_len_for_plot) == 0 || is.na(current_chr_len_for_plot) || local_from < 1 || local_to > current_chr_len_for_plot) {
-          showNotification(paste0("Range out of bounds for chromosome '", local_chr, "'. Max length: ", current_chr_len_for_plot), type = "error")
+          showModal(modalDialog(
+            title = "Input Error: Range Out of Bounds",
+            paste0("The specified genomic range (", local_from, " - ", local_to, ") is out of bounds for chromosome '", local_chr, "'. ",
+                   "The maximum length for this chromosome is: ", current_chr_len_for_plot, "."),
+            footer = modalButton("Dismiss"), # A button to close the modal
+            easyClose = TRUE # Allows closing by clicking outside the modal or pressing Esc
+          ))
           return()
         }
         
+        #--------------------------------------
+        # Step 3: Load TAD and SubTAD data into local variables into the tables
+        incProgress(0.1, detail = "Checking for TAD/SubTAD data")
+        # Initialize local variables to NULL
+        gr_TADs_local <- NULL
+        gr_SUBTADs_local <- NULL
+        if (isTRUE(input$include_tads)) {
+          # First, check if the reactive expression object itself is not NULL
+          if (!is.null(tadcalling_results)) {
+            # Now that we know the object exists, we can safely call it.
+            if (is.null(tadcalling_results())) {
+              gr_TADs(NULL)
+              gr_SUBTADs(NULL)
+              showNotification("Creating without TAD and SubTAD tracks because they are not available.", type = "warning", duration = 8)
+            } else {
+              # step a: valisate values
+              message("include_tads is TRUE, loading TAD data.")
+              current_tissue <- tadcalling_results()$current_tissue()
+              current_resolution <- tadcalling_results()$current_resolution()
+              current_processed_data_path <- tadcalling_results()$processed_output_dir()
+              # step b: check if tad file for the chosen chr is there
+              check_results <- find_existing_tads_subtads_chrs_with_check(
+                tissue = current_tissue,
+                resolution = current_resolution,
+                chr = local_chr,
+                processed_data_path = current_processed_data_path
+              )
+              print(paste("find_existing_tads_subtads_chrs_with_check result for", local_chr, ": chr_in_list =", check_results$chr_in_list))
+              
+              if (check_results$chr_in_list) {
+                tad_file_path <- file.path(current_processed_data_path, check_results$matched_tad_filename)
+                subtad_file_path <- file.path(current_processed_data_path, check_results$matched_subtad_filename)
+                
+                tryCatch({
+                  tad_tbl <- read_delim(file.path(current_processed_data_path, check_results$matched_tad_filename), delim = "\t", col_names = TRUE, show_col_types = FALSE)
+                  subtad_tbl <- read_delim(file.path(current_processed_data_path, check_results$matched_subtad_filename), delim = "\t", col_names = TRUE, show_col_types = FALSE)
+                  
+                  gr_TADs_local <- create_gr_TADs_SUBTADs(local_chr, tad_tbl)
+                  gr_SUBTADs_local <- create_gr_TADs_SUBTADs(local_chr, subtad_tbl)
+                  
+                  gr_SUBTADs(gr_SUBTADs_local)
+                  gr_TADs(gr_TADs_local)
+                  
+                  showNotification(paste("Loaded existing TAD/SubTAD data for", local_chr), type = "message")
+                }, error = function(e) {
+                  showNotification(paste("Error reading TAD/SubTAD files:", e$message), type = "error", duration = 8)
+                })
+              } else {
+                showNotification(paste("TAD/SubTAD data not found for", local_chr, ". Not plotting these tracks."),
+                                 type = "warning", duration = 8)
+                gr_TADs(NULL)
+                gr_SUBTADs(NULL)
+              }
+            }
+          } else {
+            # This else block is for the check on the tadcalling_results object itself
+            gr_TADs(NULL)
+            gr_SUBTADs(NULL)
+            showNotification("Creating without TAD and SubTAD tracks because the data source is missing.", type = "warning", duration = 8)
+          }
+        } else {
+          # This is the else block for the outer if statement (if (isTRUE(input$include_tads)))
+          message("include_Tads is off.")
+          gr_TADs(NULL)
+          gr_SUBTADs(NULL)
+        }
+        #------------------------------------------
+        #Step4: create the tracks
         incProgress(0.3, detail = "Creating Gviz tracks")
         # This is CRITICAL: Update the reactives that *define the currently plotted region*
         selectedRange(c(local_from, local_to))
         selectedChr(local_chr)
         
+        
         # Now, create the tracks and store them in the reactiveVal
+        # Pass the locally created GRanges objects directly to the function
         tracks_list <- create_tracks(
           genome = genome,
-          chr = local_chr, # Use the validated local_chr
+          chr = local_chr, 
           gr_cpgs = gr_cpgs(),
           gr_cpgIslands = gr_cpgIslands_global,
           dmrs_gr = gr_dmrs(),
           gr_offtargets = gr_offtargets(),
           tx_gr_filtered = tx_gr_filtered_global,
-          gr_SUBTADs = gr_SUBTADs(),
-          gr_TADs = gr_TADs(),
+          gr_SUBTADs = gr_SUBTADs_local,
+          gr_TADs =gr_TADs_local ,
           binsize = input$binsize,
           num_samples = num_samples(),
-          tissue = input$tissue
+          tissue = input$tissue,
+          pheno_data = dmr_results()$pheno()
         )
         all_gviz_tracks_rv(tracks_list) # Update the reactiveVal here
         
@@ -564,6 +667,9 @@ GvizPlotServer <- function(id,
       req(all_gviz_tracks_rv())
       req(selectedChr(), selectedRange()[1], selectedRange()[2]) # Ensure these are also set (should be from create_plot)
       
+      # Debug print
+      'print(paste("ref_group value:", dmr_results()$ref_group()))
+      print(paste("ref_group class:", class(dmr_results()$ref_group())))'
       
       withProgress(message = 'Rendering Gviz Plot...', value = 0, {
         
@@ -588,14 +694,14 @@ GvizPlotServer <- function(id,
         
         incProgress(0.8, detail = "Drawing plot")
         print(paste0("renderPlot: Calling plotGvizTracks for Chr:", chr, " From:", from, " To:", to))
-        plotGvizTracks(tracks = tracks_to_plot, from = from, to = to)
+        plotGvizTracks(tracks = tracks_to_plot, from = from, to = to, pheno = dmr_results()$pheno(), gr_cpgs= gr_cpgs(), ref_group= dmr_results()$ref_group())
         print("renderPlot: Plotting complete.")
         
         incProgress(1, detail = "Done")
       })
     })
     
-    
+    #-------------------------------------------
     # --- Plot Download ---
     output$downloadPlot <- downloadHandler(
       filename = function() {
@@ -610,7 +716,7 @@ GvizPlotServer <- function(id,
         # REQUIRE that the tracks have been generated
         # This means the user must have clicked "Create Plot" at least once,
         # or used the zoom/pan buttons.
-        req(all_gviz_tracks_rv())
+        req(all_gviz_tracks_rv(), dmr_results()$pheno(), gr_cpgs())
         
         # Get the already generated tracks
         tracks_for_download <- all_gviz_tracks_rv()
@@ -629,7 +735,7 @@ GvizPlotServer <- function(id,
         
         print("Download: Using existing tracks for PDF.")
         pdf(file = file, width = 12, height = 8) # Specify output device and dimensions
-        plotGvizTracks(tracks_for_download, from = current_from, to = current_to)
+        plotGvizTracks(tracks_for_download, from = current_from, to = current_to, pheno = dmr_results()$pheno(), gr_cpgs=gr_cpgs())
         dev.off()
         print("Download: PDF creation complete.")
       }
@@ -780,115 +886,10 @@ GvizPlotServer <- function(id,
         }
       }
     })
-    
   })
+  
 } 
 
 
 
-'# ─────────────────────────────────────
-# Main Shiny App (app.R equivalent)
-# ─────────────────────────────────────
-source("../utils/GVIZ_plot_utils.R")
 
-# This is a static object that will be passed to the DMR module
-message("Loading/Preparing tx_gr_filtered for annotation...")
-edb <- EnsDb.Hsapiens.v86
-options(ucscChromosomeNames = TRUE)
-tx_gr <- genes(edb)
-tx_gr_filtered_global <- keepSeqlevels(tx_gr, standardChromosomes(tx_gr), pruning.mode = "coarse")
-seqlevelsStyle(tx_gr_filtered_global) <- "UCSC"
-message("tx_gr_filtered prepared.")
-#-------------------------------------------------------------------------
-# Chromosome Lengths Table from BSgenome
-library(BSgenome.Hsapiens.UCSC.hg38)
-hg38 <- BSgenome.Hsapiens.UCSC.hg38
-chr_lengths <- seqlengths(hg38)
-chr_size_df_global <- data.frame(
-  Chromosome = names(chr_lengths),
-  Length = as.numeric(chr_lengths),
-  stringsAsFactors = FALSE
-)
-print("Global: chr_size_df_global loaded.")
-#------------------------------------------------------------------
-# CpG Islands - Loaded once globally
-# Uses the loadCpGIslands_gr function from utils/GVIZ_plot_utils.R
-gr_cpgIslands_global <- loadCpGIslands_gr(destfile = "cpgIslandExt_hg38.txt.gz")
-print(paste("Global: gr_cpgIslands_global loaded. Number of CpG Islands:", length(gr_cpgIslands_global)))
-#------------------------------
-
-dmr_list <- reactiveVal(NULL)
-annotated <- reactiveVal(NULL)
-offtargets_combined <- reactiveVal(NULL)
-SUBTADs <- reactiveVal(NULL)
-tads <- reactiveVal(NULL)
-print("Main App: Initializing data loading...")
-
-# Replace with your actual file paths
-dmr_list_path <- "C:/Users/ghaza/Documents/ghazal/Bioinformatik_Fächer/Masterarbeit_Project/Scripts/R_Scripts/intermediate_data/DMRs_cutoff_neg0.15_to_0.15_B0_2025-06-24.rds"
-annotated_path <- "C:/Users/ghaza/Documents/ghazal/Bioinformatik_Fächer/Masterarbeit_Project/Scripts/R_Scripts/intermediate_data/annotated_object_20250627.rds"
-offtargets_path <- "C:/Users/ghaza/Documents/ghazal/Bioinformatik_Fächer/Masterarbeit_Project/Scripts/R_Scripts/modules/intermediate_data/guide1_guide2_guide3_guide4_guide5_guide6.rds"
-subtad_path <- "C:/Users/ghaza/Documents/ghazal/Bioinformatik_Fächer/Masterarbeit_Project/Scripts/PythonProject/TADs_CAKI2/3_TADs_as_txt_and_Excel/CAKI2_chr13_25kb_TADs.txt"
-tad_path <- "C:/Users/ghaza/Documents/ghazal/Bioinformatik_Fächer/Masterarbeit_Project/Scripts/PythonProject/TADs_CAKI2/3_TADs_as_txt_and_Excel/CAKI2_chr13_25kb_SubTADs_noDuplicates.txt"
-
-results_dmr <- readRDS(dmr_list_path)
-results_anno <- readRDS(annotated_path)
-
-dmr_list <- reactive({
-  list(dmr_table = reactiveVal(results_dmr$dmr_table),
-    pheno = reactiveVal(results_dmr$pheno)  )})
-
-annotated <- reactive({ list(
-  annotated_table = reactiveVal(results_anno$annotated_table)
-  )
-})
-
-
-if (file.exists(offtargets_path)) {
-  offtargets_combined(readRDS(offtargets_path))
-  print(paste("Main App: Off-targets file loaded from:", offtargets_path))
-} else {
-  print(paste("Main App: ERROR - Off-targets file not found:", offtargets_path))
-}
-
-if (file.exists(subtad_path)) {
-  SUBTADs(read_delim(subtad_path, delim = "\t", show_col_types = FALSE))
-  print(paste("Main App: SubTADs file loaded from:", subtad_path))
-} else {
-  print(paste("Main App: ERROR - SubTADs file not found:", subtad_path))
-}
-
-if (file.exists(tad_path)) {
-  tads(read_delim(tad_path, delim = "\t", show_col_types = FALSE))
-  print(paste("Main App: TADs file loaded from:", tad_path))
-} else {
-  print(paste("Main App: ERROR - TADs file not found:", tad_path))
-}
-print("Main App: Data loading complete.")
-
-
-
-ui <- page_navbar(
-  title = "EPIC Array Pipeline",
-  theme = bs_theme(version = 5, bootswatch = "flatly"),
-  nav_panel("Final Plot", GvizPlotUI("gviz_test_id"))
-)
-
-server <- function(input, output, session) {
-  print("Main Server started.")
-  
-  GvizPlotServer(
-    id = "gviz_test_id",
-    dmr_results = dmr_list,
-    annotation_results = annotated,
-    offtarget_table = offtargets_combined,
-    tad_table = tads,
-    subtad_table = SUBTADs,
-    chr_size_df = chr_size_df_global,
-    tx_gr_filtered = tx_gr_filtered_global,
-    gr_cpgIslands = gr_cpgIslands_global
-  )
-  print("Main Server: GvizPlotServer module called.")
-}
-
-shinyApp(ui, server)'

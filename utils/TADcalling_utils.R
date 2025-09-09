@@ -2,7 +2,6 @@
 # 2 functions
 
 
-
 process_tad_results <- function(chrom, tissue, binsize, input_dir, output_dir) {
   # ✅ Ensure input_dir and output_dir exist
   if (!dir.exists(input_dir)) {

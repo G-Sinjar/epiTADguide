@@ -375,18 +375,18 @@ boxplotServer <- function(id, dmr_output_reactive, annotation_tbl_reactive, dmp_
             NULL
           }
         })
-        
+        #-----------------------
         output$boxplot_output <- renderPlot({
           if (!interactive_flag && inherits(plot_result, "ggplot")) plot_result else NULL
         })
-        
+        #-----------------
         output$interactive_boxplot <- renderPlotly({
           if (interactive_flag && inherits(plot_result, "plotly")) plot_result else NULL
         })
-        
+        #---------------------------
         output$download_plot <- downloadHandler(
           filename = function() {
-            if (interactive_flag) paste0(DMRx, "_plot.html") else paste0(DMRx, "_plot.pdf")
+            if (interactive_flag) paste0(DMRx, "_boxplot.html") else paste0(DMRx, "_boxplot.pdf")
           },
           content = function(file) {
             if (interactive_flag) {
@@ -396,7 +396,7 @@ boxplotServer <- function(id, dmr_output_reactive, annotation_tbl_reactive, dmp_
                 htmlwidgets::saveWidget(plot_result, file)
               }
             } else {
-              ggsave(file, plot_result)
+              ggsave(file, plot_result , width = 12, height = 8)
             }
           }
         )
@@ -404,7 +404,7 @@ boxplotServer <- function(id, dmr_output_reactive, annotation_tbl_reactive, dmp_
         status_message(paste(status_lines, collapse = "\n"))
       }) # End of withProgress
     })
-    return(annotated_with_qval_r())
+    #return(annotated_with_qval_r())
   })
 }
 
@@ -420,8 +420,8 @@ library(ggplot2)
 source("../utils/dmrs_boxplot_utils.R")
 
 # Load RDS objects (as static lists)
-results_dmr <- readRDS("./main_app_tests/box_pheno_pass/DMR_results/DMRs_unguided_vs_sample_groupguided_cutoff_-0.15_0.15_B0_20250804.rds")
-results_anno <- readRDS("./main_app_tests/intermediate_data/annotated_object_20250808.rds")
+results_dmr <- readRDS("../main_app_tests/test/DMR_results/DMRs_unguided_vs_sample_groupguided_cutoff_-0.15_0.15_B99.rds")
+results_anno <- readRDS("../main_app_tests/test/intermediate_data/annotated_object_20250831.rds")
 dmp_results <- readRDS("./main_app_tests/dmp_qval_test/intermediate_data/DMP_results_SWAN_0.89999qval.rds")
 
 # ---- UI ----
@@ -466,8 +466,7 @@ server <- function(input, output, session) {
     dmr_output_reactive = dmr_output_reactive,
     annotation_tbl_reactive = annotation_tbl_reactive,
     dmp_results = dmp_results_reactive,
-    project_output_dir = reactive({"./main_app_tests/box_pheno_pass"})
+    project_output_dir = reactive({"../main_app_tests/test"})
   )
 }
-shinyApp(ui = ui, server = server)
-'
+shinyApp(ui = ui, server = server)'

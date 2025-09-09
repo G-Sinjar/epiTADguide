@@ -25,9 +25,12 @@ offtargetsUI <- function(id) {
     fillable = TRUE,
     sidebar = sidebar(
       h4("Input Data"),
-      textInput(ns("directory_path"), "Directory Path:", placeholder = "e.g. C:\\path\\to\\data"),
-      textAreaInput(ns("guide_file_names"), "Guide File Names (one per line):",
-                    placeholder = "e.g.,\nguide1.txt\nguide2a.txt", rows = 5),
+      fileInput(
+        ns("guide_files"),
+        "Select Guide Files (.txt)",
+        multiple = TRUE,          # allow selecting multiple files
+        accept = ".txt"           # only .txt files
+      ),
       p(helpText("Note: Ensure your guide files are tab-separated and properly named according to guide name/ID.")),
       actionButton(ns("run_processing"), "Process Guide Files into one file", class = "btn-primary"),
       hr(),
@@ -85,23 +88,10 @@ offtargetsServer <- function(id, project_output_dir = reactive(NULL)) {
       msgs <- list()
       all_guides <- list()
       
-      dir_path <- gsub("\\\\", "/", input$directory_path) # Normalize path separators
-      msgs <- append(msgs, paste0("🛠️ Processing started... Directory: ", dir_path))
-      
-      if (!dir.exists(dir_path)) {
-        msgs <- append(msgs, "❌ Error: The path you provided doesn't exist.")
-        output_messages(msgs)
-        return()
-      }
-      
-      file_names <- strsplit(input$guide_file_names, "\\s+")[[1]] # Split by any whitespace
-      file_names <- file_names[file_names != ""] # Remove empty strings if any
-      
-      if (length(file_names) == 0) {
-        msgs <- append(msgs, "❌ Error: No guide file names provided.")
-        output_messages(msgs)
-        return()
-      }
+      req(input$guide_files)  # ensure files were uploaded
+      file_paths <- input$guide_files$datapath  # temporary uploaded paths
+      file_names <- input$guide_files$name      # original file names
+      msgs <- append(msgs, paste0("🛠️ Processing started... ", length(file_names), " files uploaded"))
       
       col_names <- c("Chrom", "Strand", "Start", "End", "Given query", "Actual genomic hit",
                      "Number_of_mismatches", "Pre-mRNA (Unspliced)", "mRNA (5UTR)",
@@ -110,14 +100,14 @@ offtargetsServer <- function(id, project_output_dir = reactive(NULL)) {
       
       withProgress(message = "Processing off-target files...", value = 0, {
         for (i in seq_along(file_names)) {
+          file_path <- file_paths[i]
           file_name <- file_names[i]
-          file_path <- file.path(dir_path, file_name)
           
           incProgress(i / (length(file_names) * 4), detail = paste("Reading", file_name, "..."))
-          msgs <- append(msgs, paste0("🔍 Reading file: ", file_path))
+          msgs <- append(msgs, paste0("🔍 Reading file: ", file_name))
           
           guide_data <- tryCatch({
-            read_delim(file_path, delim = "\t", col_names = FALSE, show_col_types = FALSE)
+            readr::read_delim(file_path, delim = "\t", col_names = FALSE, show_col_types = FALSE)
           }, error = function(e) {
             msgs <<- append(msgs, paste0("❌ Step 1 - Reading '", file_name, "' failed: ", e$message))
             return(NULL)
@@ -301,12 +291,13 @@ offtargetsServer <- function(id, project_output_dir = reactive(NULL)) {
 
 
 
-'# app.R
+# app.R
 library(shiny)
 library(DT)
 library(readr)
 library(dplyr)
 library(stringr)
+library(bslib)
 
 
 ui <- page_navbar(
@@ -327,4 +318,4 @@ server <- function(input, output, session) {
   })
 }
 
-shinyApp(ui = ui, server = server)'
+shinyApp(ui = ui, server = server)

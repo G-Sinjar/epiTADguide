@@ -304,7 +304,7 @@ norm_server <- function(id, RGset, raw_normalised, targets, project_output_dir) 
       withProgress(message = 'Generating Quantile Density Plot...', value = 0, {
         incProgress(0.5, detail = "Plotting Quantile normalized data")
         densityPlot(getBeta(Quantile_normalised_res()), sampGroups = targets()$Sample_Group,
-                    #main = "Beta values distribution after Quantile",
+                    #main = "Beta values distribution after Stratified Quantile",
                     pal = rainbow(length(unique(targets()$Sample_Group))))
         incProgress(1, detail = "Plot ready")
       })

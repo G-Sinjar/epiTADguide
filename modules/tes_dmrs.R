@@ -3,22 +3,22 @@
 library(DT)        # For interactive data tables
 library(openxlsx)
 library(GenomicRanges)
-library(shiny) # Add shiny explicitly here for module to be self-contained in its library requirements
-library(minfi) # Add minfi explicitly here
-library(bslib) # Add bslib explicitly here
+library(shiny) 
+library(minfi) 
+library(bslib) 
 library(EnsDb.Hsapiens.v86)
 library(shinyjs)
 
 
 ## load input data
-SWAN_filtered_rgset <- readRDS("../main_app_tests/tt/intermediate_data/filtered_GRset_SWAN_SNPsremoved_SexChrProbes_kept_20250831.rds")
-#Noobswan_filter <- readRDS("../main_app_tests/tt/intermediate_data/filtered_GRset_NoobSwan_SNPsremoved_SexChrProbes_kept_20250831.rds")
+#SWAN_filtered_rgset <- readRDS("../main_app_tests/test/intermediate_data/filtered_GRset_SWAN_SNPsremoved_SexChrProbes_kept_20250809.rds")
+Noobswan_filter <- readRDS("../main_app_tests/test/intermediate_data/filtered_GRset_NoobSwan_SNPsremoved_SexChrProbes_kept_20250831.rds")
 
 # Load custom utility functions for DMR processing
 # In a module, you might consider if these utils should always loaded by the main app. For now, well keep the source here.
 # Adjust path for sourcing relative to the module file itself
 source("../utils/dmrs_utils.R")
-source("./06_DMR_identification_Module_v1.R")
+source("./06_DMR_identification_Module.R")
 
 ## creating the gene granges for the input
 library(EnsDb.Hsapiens.v86)
@@ -37,7 +37,7 @@ seqlevelsStyle(tx_gr_filtered) <- "UCSC"
 #tx_gr_filtered
 
 # Check if the directory exists
-dir_path <- "../main_app_tests/epic-test"
+dir_path <- "../main_app_tests/test"
 
 if (dir.exists(dir_path)) {
   print(paste("The directory exists:", dir_path))
@@ -58,7 +58,7 @@ ui <- page_navbar(
 # Server
 server <- function(input, output, session) {
   # Wrap your object as a reactive expression
-  filtered_rgset_reactive <- reactive({ SWAN_filtered_rgset })
+  filtered_rgset_reactive <- reactive({ Noobswan_filter })
   
   # Call the module
   annotated_table <- dmrs_server("dmrs", 

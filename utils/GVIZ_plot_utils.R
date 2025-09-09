@@ -42,16 +42,16 @@ create_gr_cpgs <- function(cpg_table) {
   mcols(gr) <- cpg_table[, 4:ncol(cpg_table), drop = FALSE]
   return(gr)
 }
-'## test function 2
-annotated <- readRDS("C:/Users/ghaza/Documents/ghazal/Bioinformatik_Fächer/Masterarbeit_Project/Scripts/R_Scripts/intermediate_data/annotated_object_20250627.rds")
-cpgs_gr <- create_gr_cpgs(annotated$annotated_table)
+## test function 2
+#annotated <- readRDS("C:/Users/ghaza/Documents/ghazal/Bioinformatik_Fächer/Masterarbeit_Project/Scripts/R_Scripts/intermediate_data/annotated_object_20250627.rds")
+#cpgs_gr <- create_gr_cpgs(annotated$annotated_table)
 
 # case 2: with qval
-annotated_tbl_withqval <- readRDS("../modules/main_app_tests/box_pheno_pass/intermediate_data/annotated_with_qval.rds")
-cpgs_gr_qval <- create_gr_cpgs(annotated_tbl_withqval)
+#annotated_tbl_withqval <- readRDS("../modules/main_app_tests/box_pheno_pass/intermediate_data/annotated_with_qval.rds")
+#cpgs_gr_qval <- create_gr_cpgs(annotated_tbl_withqval)
 # manipulate the data 
-cpgs_gr_qval$significance_last_qvalue[cpgs_gr_qval$Name== "cg16556145_BC11"] <- "Sig"
-'
+#cpgs_gr_qval$significance_last_qvalue[cpgs_gr_qval$Name== "cg16556145_BC11"] <- "Sig"
+
 #--------------------------------------------------------------------------------------------
 # function 3: create granges of offtargets table
 
@@ -72,10 +72,10 @@ create_gr_offtargets <- function(offtarget_table) {
   return(gr)
 }
 
-#test function
-#offtargets_combined <- readRDS("C:/Users/ghaza/Documents/ghazal/Bioinformatik_Fächer/Masterarbeit_Project/Scripts/R_Scripts/modules/intermediate_data/guide1_guide2_guide3_guide4_guide5_guide6.rds")
-#gr_offtargets <- create_gr_offtargets(offtargets_combined)
-
+'#test function
+offtargets_combined <- readRDS("C:/Users/ghaza/Documents/ghazal/Bioinformatik_Fächer/Masterarbeit_Project/Scripts/R_Scripts/modules/intermediate_data/guide1_guide2_guide3_guide4_guide5_guide6.rds")
+gr_offtargets <- create_gr_offtargets(offtargets_combined)
+'
 #-----------------------------------------------------------------------------------
 # function 4: create granges of tads/subtads table
 create_gr_TADs_SUBTADs <- function(chr, SUBTADs) {
@@ -92,9 +92,9 @@ create_gr_TADs_SUBTADs <- function(chr, SUBTADs) {
   return(gr)
 }
 
-#setwd("C:/Users/ghaza/Documents/ghazal/Bioinformatik_Fächer/Masterarbeit_Project/Scripts/R_Scripts/utils")
+'#setwd("C:/Users/ghaza/Documents/ghazal/Bioinformatik_Fächer/Masterarbeit_Project/Scripts/R_Scripts/utils")
 #test funcgion
-'library(readr)
+library(readr)
 chromosome_name <- "chr13"
 subtad_file_dir <- "../main_app_tests/epic-test/TADcaller_results/4DNFIIH3SM5N/TADcaller_Results/TADs_CAKI2/processed_tads/CAKI2_chr13_25kb_SubTADs.txt"
 SUBTADs <- read_delim(subtad_file_dir, delim = "\t", show_col_types = FALSE)
@@ -212,7 +212,7 @@ create_tracks <- function(genome, chr,
   }, error = function(e) {
     message("Error creating CpG Islands track: ", e$message)
   })
-  
+  #----------------------
   # DMRs
   tryCatch({
     if (!is.null(dmrs_gr)) {
@@ -223,7 +223,7 @@ create_tracks <- function(genome, chr,
   }, error = function(e) {
     message("Error creating DMRs track: ", e$message)
   })
-  
+  #----------------------------
   # Off-targets
   tryCatch({
     if (!is.null(gr_offtargets)) {
@@ -235,7 +235,6 @@ create_tracks <- function(genome, chr,
     message("Error creating Off-targets track: ", e$message)
   })
   #--------------------------------------
-  
   # Beta values # V2:
   # Beta values - modified version with dynamic column selection
   tryCatch({
@@ -278,8 +277,7 @@ create_tracks <- function(genome, chr,
   }, error = function(e) {
     message("Error creating Gene track: ", e$message)
   })
-  
-  
+  #----------------------------
   # SUBTADs
   tryCatch({
     if (!is.null(gr_SUBTADs)) {
@@ -292,7 +290,7 @@ create_tracks <- function(genome, chr,
   }, error = function(e) {
     message("Error creating SUBTADs track: ", e$message)
   })
-  
+  #-------------------------------
   # TADs
   tryCatch({
     if (!is.null(gr_TADs)) {
@@ -322,8 +320,8 @@ create_tracks <- function(genome, chr,
 }
 
 ################## test function
-'# gene granges which is global
-library(EnsDb.Hsapiens.v86)
+# gene granges which is global
+'library(EnsDb.Hsapiens.v86)
 edb <- EnsDb.Hsapiens.v86
 options(ucscChromosomeNames = TRUE)
 tx_gr <- genes(edb)
@@ -331,7 +329,7 @@ tx_gr_filtered_global <- keepSeqlevels(tx_gr, standardChromosomes(tx_gr), prunin
 seqlevelsStyle(tx_gr_filtered_global) <- "UCSC"
 # ------------------
 tracks <- create_tracks(genome = "hg38", chr = "chr13",
-                        gr_cpgs = cpgs_gr_qval,   # or cpgs_gr
+                        gr_cpgs = cpgs_gr,   # or cpgs_gr
                         gr_cpgIslands = gr_cpgIslands,
                         dmrs_gr = dmrs_gr,
                         gr_offtargets = gr_offtargets,
@@ -492,8 +490,10 @@ plotGvizTracks <- function(tracks, from, to, pheno = NULL, gr_cpgs = NULL, ref_g
 
 #pheno <- dmr_list$pheno
 #cpgs_gr
+#from <- 95433599
+#to <- 95579959
 ## test function
-#plotGvizTracks(tracks = tracks, from = 95552530, to = 95553130, pheno = pheno, gr_cpgs=cpgs_gr, ref_group= "unguided")
+#plotGvizTracks(tracks = tracks, from = 95433599, to = 95579959, pheno = pheno, gr_cpgs=cpgs_gr, ref_group= "unguided")
 #----------------------------------------------------------------------------------------
 
 #' Find Chromosomes with TAD and SubTAD Tables in a Given Path and Check for a Specific Chromosome

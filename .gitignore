@@ -23,6 +23,8 @@ main_app_tests/
 modules/epic_test/
 Hela vs Raji test dataset/
 apps-scripts/
+TADcaller_Default_Project/
+modules/epic-test_tadS/
 #
 # R and IDE temp files
 .RData

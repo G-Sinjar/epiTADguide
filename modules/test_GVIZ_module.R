@@ -5,7 +5,7 @@ library(stringr)
 # Main Shiny App (app.R equivalent)
 # ─────────────────────────────────────
 source("../utils/GVIZ_plot_utils.R")
-source("./10_GVIZ_plot_Module_V1.R")
+source("./10_GVIZ_plot_Module.R")
 
 # This is a static object that will be passed to the DMR module
 message("Loading/Preparing tx_gr_filtered for annotation...")
@@ -40,9 +40,9 @@ tadcalling_results_dummy <- reactiveVal(NULL)
 print("Main App: Initializing data loading...")
 
 # Replace with your actual file paths
-dmr_list_path <- "../main_app_tests/dmr_ram_detect/DMR_results/DMRs_unguided_vs_sample_groupguided_cutoff_-0.15_0.15_B4_20250809.rds"
-annotated_path <- "../intermediate_data/annotated_object_20250627.rds"
-annotated_tbl_withqval <- "../main_app_tests/dmr_ram_detect/intermediate_data/annotated_with_qval.rds"
+dmr_list_path <- "../main_app_tests/test/DMR_results/DMRs_unguided_vs_sample_groupguided_cutoff_-0.15_0.15_B99.rds"
+#annotated_path <- "../main_app_tests/test/intermediate_data/annotated_object_20250831.rds"
+annotated_tbl_withqval <- "../main_app_tests/test/intermediate_data/annotated_with_qval.rds"
 offtargets_path <- "./intermediate_data/guide1_guide2_guide3_guide4_guide5_guide6.rds"
 tad_subtad_path <- "../main_app_tests/dmr_ram_detect/TADcaller_results/4DNFIIH3SM5N/TADcaller_Results/TADs_CAKI2/processed_tads"
 dmp_path <-"../main_app_tests/dmr_ram_detect/intermediate_data/DMP_results_SWAN_0.89999qval.rds"
@@ -56,7 +56,7 @@ all_chrs <- c(autosomal_chrs, sex_chrs)
 
 
 results_dmr <- readRDS(dmr_list_path)
-results_anno <- readRDS(annotated_path)
+#results_anno <- readRDS(annotated_path)
 results_ano_qval <- readRDS(annotated_tbl_withqval)
 results_dmp <- readRDS(dmp_path)
 
@@ -72,10 +72,10 @@ DMPs_reactive <- reactive({ list(
 )
 })
 
-annotated <- reactive({ list(
+'annotated <- reactive({ list(
   annotated_table_with_qval = reactiveVal(results_anno$annotated_table)
 )
-})
+})'
 boxplot_results <- reactive({ results_ano_qval })
 
 if (file.exists(offtargets_path)) {
@@ -116,7 +116,7 @@ server <- function(input, output, session) {
     offtarget_table = offtargets_combined,
     tadcalling_results = tadcalling_results_dummy, 
     chr_size_df = chr_size_df_global,
-    tx_gr_filtered = tx_gr_filtered_global,
+    tx_gr_filtered_global = tx_gr_filtered_global,
     gr_cpgIslands = gr_cpgIslands_global
   )
   print("Main Server: GvizPlotServer module called.")

@@ -23,7 +23,8 @@ dmp_UI <- function(id) {
         
         # q-value cutoff numeric input
         numericInput(ns("qvalue_cutoff"), "q-value Cutoff (FDR):",
-                     value = 0.09999, min = 0, max = 1, step = 0.00001),
+                     value = 1, min = 0, max = 1, step = 0.00001),
+        helpText("It is recommended not to apply a q-value cutoff (i.e., set it to 1). This ensures that p-values for all CpGs are retained in the output, allowing you to filter the table afterward based on your own criteria."),
         br(),
         # Reference group display
         # Reference group display
@@ -144,14 +145,14 @@ dmp_Server <- function(id,filtered_data , pheno, ref_group, project_output_dir) 
     })
     #----------------------------------------------------
     # Function to save DMP results automatically
-    save_dmp_results <- function(results_table, output_dir) {
+    save_dmp_results <- function(results_table, output_dir, last_qvalue) {
       dmp_dir <- file.path(output_dir, "DMP_results")
       if (!dir.exists(dmp_dir)) {
         dir.create(dmp_dir)
       }
       
-      timestamp <- format(Sys.time(), "%Y%m%d_%H%M%S")
-      filename <- paste0("DMP_results_", timestamp, ".csv")
+      timestamp <- format(Sys.time(), "%Y%m%d")
+      filename <- paste0("DMP_results_", last_qvalue, "qval_",timestamp, ".csv")
       filepath <- file.path(dmp_dir, filename)
       
       write.csv(results_table, filepath, row.names = TRUE)
@@ -300,7 +301,7 @@ dmp_Server <- function(id,filtered_data , pheno, ref_group, project_output_dir) 
            return()
           }
           
-          saved_path <- save_dmp_results(final_dmp, project_output_dir())
+          saved_path <- save_dmp_results(final_dmp, project_output_dir(), input$qvalue_cutoff)
           append_message(paste0("✅ DMP analysis completed successfully! " , nrow(dmp_final_table()), " significant DMPs found. Results saved to: " , saved_path, "\n"))
         }, error = function(e) {
          append_message(paste0("Error in saving the DMP table: ", e$message, ". ❌ Analysis aborted.\n"))
@@ -388,7 +389,7 @@ dmp_Server <- function(id,filtered_data , pheno, ref_group, project_output_dir) 
 }
 
 
-'# test module this test dont work after the last modification but the module works in the main app
+'# test module
 # app.R
 
 # Load required libraries
@@ -416,7 +417,7 @@ tryCatch({
 # Extract pheno data and set reference group
 pheno_table <- pData(GenoRationSet)
 ref_group <- "unguided"
-project_path <- "./main_app_tests/box_pheno_pass"
+project_path <- "../main_app_tests/test"
 
 # Source the DMP module and utilities
 #source("11_dmp_module.R")

@@ -19,10 +19,10 @@ qcUI <- function(id) {
       radioButtons(ns("qc_plot"), "Select QC Plot:",
                    choices = list(
                      "Plot 1: Channel Intensity" = "plot1",
-                     "Plot 2: Medien Intensity (Sample-specific)" = "plot2",
-                     "Plot 3: Multi-dimensional scaling (MDS) plot" = "plot3",
-                     "Plot 4: Beta value densities of the samples" = "plot4",
-                     "Plot 5: Bean plot of Beta values densities" = "plot5"
+                     "Plot 2: Sample Medien Intensity" = "plot2",
+                     "Plot 3: Sample Multi-dimensional scaling (MDS)" = "plot3",
+                     "Plot 4: Sample Beta values densities" = "plot4",
+                     "Plot 5: Sample Beta values densities- Bean plot" = "plot5"
                    ),
                    selected = "plot1"),
       radioButtons(ns("plot_format"), "Select Format:", choices = c("PDF" = "pdf", "PNG" = "png"), inline = TRUE),
@@ -53,35 +53,35 @@ qcServer <- function(id, RGset, raw_normalised, targets, project_output_dir) {
              
              # Plot 1: Channel intensity
              "plot1" = tagList(
-               h3("Channel Intensity"),
+               h3("Channel Intensity plot"),
                helpText("The Channel Intensity plot displays the density distribution of raw red and green channel fluorescence intensities across all samples. This visualization is crucial for rapidly identifying samples with aberrant overall signal levels, which could indicate issues such as poor hybridization, insufficient DNA input, or errors during array scanning."),
                plotOutput(ns("plot1"), height = "100vh")
              ),
              
              # Plot 2: sample-specific QC
              "plot2" = tagList(
-               h3("Medien Intensity (Sample-specific)"),
+               h3("Sample Medien Intensity plot"),
                helpText("	This is a simple quality control plot that uses the log median intensity in both the methylated (M) and unmethylated (U) channels. When plotting these two medians against each other, it has been observed that good samples cluster together, while failed samples tend to separate and have lower median intensities."),
                plotOutput(ns("plot2"), height = "100vh")
              ),
              
              # Plot 3: MDS plot
              "plot3" = tagList(
-               h3("Multi-dimensional scaling (MDS) plot"),
+               h3("Sample Multi-Dimensional Scaling (MDS) plot"),
                helpText("Multi-dimensional scaling plot gives an overview of similarities and differences between samples using Euclidean distance."),
                plotOutput(ns("plot3"), height = "100vh")
              ),
              
              # Plot 4: Beta value densities of the samples
              "plot4" = tagList(
-               h3("Beta values densities of the samples"),
+               h3("Sample Beta values densities plot"),
                helpText("A Distribution of beta values for each sample. This plot helps assessing the overall methylation profile of a sample and identify potential problems.\nThis distribution is expected to be bimodal with the 2 peaks (around 0 and 1 beta values) representing methylated and unmethylated signals. Any center peaks should be further investigated (e.g. in Plot5) for problems."),
                plotOutput(ns("plot4"), height = "100vh")
              ),
              
              # Plot 5: Bean plot of Beta values densities
              "plot5" = tagList(
-               h3("Bean plot of Beta values densities"),
+               h3("Sample Beta values densities Bean plot"),
                helpText("Displays the density of beta values for each individual sample, with samples colored according to their respective experimental groups.\nthis granular view allows for the precise identification of individual samples exhibiting unusual or defective beta value distributions. Such deviations can indicate quality control issues at the single-sample level, necessitating further investigation or potential exclusion of affected samples from downstream analyses."),
                plotOutput(ns("plot5"), height = "100vh")
              )
@@ -111,17 +111,18 @@ qcServer <- function(id, RGset, raw_normalised, targets, project_output_dir) {
         raw_normalised_qc <- addQC(raw_normalised(), qc)
         incProgress(0.5, detail = "Plotting QC results")
         plotQC(qc)
+        title(main = "Sample Median Intensities")
         incProgress(1, detail = "Plot ready")
       })
     })
     
-    # Plot 3: Multi-dimensional scaling (MDS) plot
+    # Plot 3: sample Multi-dimensional scaling (MDS) plot
     output$plot3 <- renderPlot({
       req(RGset(), targets())
       withProgress(message = 'Generating MDS Plot...', value = 0, {
         incProgress(0.1, detail = "Performing MDS analysis")
         mdsPlot(RGset(), sampNames = targets()$Sample_Name, sampGroups = targets()$Sample_Group,
-                main = "Raw Beta MDS", legendNCol = 1, legendPos = "topright")
+                main = "Sample MDS", legendNCol = 1, legendPos = "topright")
         incProgress(1, detail = "Plot ready")
       })
     })
@@ -132,7 +133,7 @@ qcServer <- function(id, RGset, raw_normalised, targets, project_output_dir) {
       withProgress(message = 'Generating Beta Distribution Plot...', value = 0, {
         incProgress(0.1, detail = "Calculating density")
         densityPlot(RGset(), sampGroups = targets()$Sample_Group,
-                    main = "Beta values distribution of raw data", xlab = "Beta values")
+                    main = "Sample Beta values Densityies", xlab = "Beta values")
         incProgress(1, detail = "Plot ready")
       })
     })
@@ -143,7 +144,7 @@ qcServer <- function(id, RGset, raw_normalised, targets, project_output_dir) {
       withProgress(message = 'Generating Bean Plot...', value = 0, {
         incProgress(0.1, detail = "Preparing bean plot data")
         par(mar = c(5, 6, 4, 2))
-        densityBeanPlot(RGset(), sampGroups = targets()$Sample_Group, sampNames = targets()$Sample_Name)
+        densityBeanPlot(RGset(), sampGroups = targets()$Sample_Group, sampNames = targets()$Sample_Name, main = "Sample Beta values Densities Bean plot")
         incProgress(1, detail = "Plot ready")
       })
     })
@@ -166,18 +167,19 @@ qcServer <- function(id, RGset, raw_normalised, targets, project_output_dir) {
                            "plot2" = function() {
                              qc <- getQC(raw_normalised())
                              plotQC(qc)
+                             title(main = "Sample Median Intensities")
                            },
                            "plot3" = function() {
                              mdsPlot(RGset(), sampNames = targets()$Sample_Name, sampGroups = targets()$Sample_Group,
-                                     main = "Raw Beta MDS", legendNCol = 1, legendPos = "topright")
+                                     main = "Sample MDS", legendNCol = 1, legendPos = "topright")
                            },
                            "plot4" = function() {
                              densityPlot(RGset(), sampGroups = targets()$Sample_Group,
-                                         main = "Beta values distribution of raw data", xlab = "Beta values")
+                                         main = "Sample Beta values Densities", xlab = "Beta values")
                            },
                            "plot5" = function() {
                              par(mar = c(5, 6, 4, 2))
-                             densityBeanPlot(RGset(), sampGroups = targets()$Sample_Group, sampNames = targets()$Sample_Name)
+                             densityBeanPlot(RGset(), sampGroups = targets()$Sample_Group, sampNames = targets()$Sample_Name, main = "Sample Beta values Densities Bean plot")
                            })
         
         if (input$plot_format == "pdf") {
