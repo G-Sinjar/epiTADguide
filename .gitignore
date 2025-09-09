@@ -25,6 +25,7 @@ Hela vs Raji test dataset/
 apps-scripts/
 TADcaller_Default_Project/
 modules/epic-test_tadS/
+deDoc2-main/
 #
 # R and IDE temp files
 .RData
@@ -35,7 +36,7 @@ modules/.RDataTmp
 modules/.Rhistory
 modules/intermediate_data/
 *.rds
-
+Masterarbeit-R_Scripts.Rproj
 # System files
 .DS_Store
 Thumbs.db
